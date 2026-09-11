@@ -1,53 +1,69 @@
 :root {
   --bg: #1a1210;
-  --panel: #2a1c18;
+  --panel: #2a1c18ee;
   --ink: #f3e6d4;
   --muted: #b9a48c;
   --accent: #c45c26;
-  --ok: #6a9a5a;
-  --bad: #a33;
   --line: #4a342c;
   font-family: "Segoe UI", system-ui, sans-serif;
 }
-* { box-sizing: border-box; }
-html, body {
-  margin: 0; height: 100%; background: var(--bg); color: var(--ink);
-}
-body { display: flex; flex-direction: column; }
+* { box-sizing: border-box; touch-action: none; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); overflow: hidden; }
 button {
-  font: inherit; border: 0; border-radius: 10px; padding: 14px 18px;
+  font: inherit; border: 0; border-radius: 10px; padding: 12px 16px;
   background: var(--accent); color: #fff; font-weight: 700;
 }
 button.secondary { background: #3d2a24; color: var(--ink); }
-button:disabled { opacity: 0.45; }
-.screen { display: none; flex: 1; flex-direction: column; padding: 16px; gap: 12px; overflow: auto; }
+button:disabled { opacity: 0.35; }
+.screen { display: none; height: 100%; flex-direction: column; }
 .screen.active { display: flex; }
 .hero {
-  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; text-align: center;
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 14px; text-align: center; padding: 16px;
 }
 .hero img { width: 96px; height: 96px; object-fit: contain; }
-.hero h1 { margin: 0; font-size: 1.8rem; letter-spacing: 0.04em; }
-.hero p { margin: 0; color: var(--muted); max-width: 28ch; }
-.row { display: flex; gap: 10px; flex-wrap: wrap; }
-.row button { flex: 1; min-width: 120px; }
-.card {
-  background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px;
+.hero h1 { margin: 0; letter-spacing: 0.06em; }
+.hero p { margin: 0; color: var(--muted); }
+.row { display: flex; gap: 10px; }
+.row button { flex: 1; }
+.tag {
+  display: inline-block; padding: 4px 10px; border-radius: 999px;
+  background: #0008; font-size: 0.8rem; margin-right: 6px;
 }
-.muted { color: var(--muted); font-size: 0.92rem; }
-.tag { display: inline-block; padding: 2px 8px; border-radius: 999px; background: #3d2a24; font-size: 0.8rem; }
-.log {
-  background: #120c0a; border-radius: 10px; padding: 10px; max-height: 180px; overflow: auto;
-  font-size: 0.85rem; line-height: 1.35; white-space: pre-wrap;
+.game3d { position: relative; }
+#c { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+#hud {
+  position: absolute; left: 10px; right: 10px; top: 10px; z-index: 2;
+  pointer-events: none;
 }
-.place-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.place-grid button { background: #3d2a24; }
-.place-grid button.here { outline: 2px solid var(--accent); }
-.bar {
-  height: 10px; background: #120c0a; border-radius: 999px; overflow: hidden; margin-top: 6px;
+#crierBox {
+  margin-top: 8px; background: var(--panel); border: 1px solid var(--line);
+  border-radius: 10px; padding: 8px 10px; font-size: 0.85rem;
 }
-.bar > span { display: block; height: 100%; background: var(--ok); }
-.bar.enemy > span { background: var(--bad); }
+#joyZone {
+  position: absolute; left: 0; bottom: 78px; width: 46%; height: 42%; z-index: 3;
+}
+#joyBase {
+  position: absolute; left: 28px; bottom: 28px; width: 110px; height: 110px;
+  border-radius: 50%; background: #0006; border: 2px solid #fff3;
+}
+#joyKnob {
+  position: absolute; left: 35px; top: 35px; width: 40px; height: 40px;
+  border-radius: 50%; background: #fffc; transform: translate(0,0);
+}
+#verbBar {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 4;
+  display: flex; gap: 8px; padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+  background: linear-gradient(transparent, #120c0af0 30%);
+}
+#verbBar button { flex: 1; }
+#panel {
+  position: absolute; left: 12px; right: 12px; bottom: 90px; z-index: 5;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px;
+}
+#panel.hidden { display: none; }
+#panelBody { margin: 10px 0; display: flex; flex-wrap: wrap; gap: 8px; }
 #toast {
-  position: fixed; left: 12px; right: 12px; bottom: 16px; display: none;
-  background: #3d2a24; border: 1px solid var(--line); border-radius: 12px; padding: 12px; z-index: 5;
+  position: fixed; left: 12px; right: 12px; top: 40%; z-index: 9; display: none;
+  background: #3d2a24; border: 1px solid var(--line); border-radius: 12px; padding: 12px; text-align: center;
 }
