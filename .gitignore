@@ -6,3 +6,5 @@ android/local.properties
 *.keystore
 keystore.properties
 .telegram_token
+
+salem.apk
