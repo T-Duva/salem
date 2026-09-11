@@ -1,44 +1,45 @@
 /* global THREE */
 const MATCH_MS = 30 * 60 * 1000
-const SECTORS = {
-  plaza: {
-    name: 'Plaza',
-    doors: [
-      { id: 'ayuntamiento', label: 'Ayuntamiento', x: -8, z: -6 },
-      { id: 'monasterio', label: 'Monasterio', x: 8, z: -6 },
-      { id: 'posada', label: 'Posada', x: 0, z: 8 },
-    ],
-    exits: { n: 'norte', e: 'este', w: 'oeste', s: 'sur' },
-  },
-  norte: {
-    name: 'Camino norte',
-    doors: [{ id: 'monasterio', label: 'Monasterio', x: 0, z: -7 }],
-    exits: { s: 'plaza', e: 'este', w: 'oeste' },
-  },
-  este: {
-    name: 'Camino este',
-    doors: [{ id: 'posada', label: 'Posada', x: 6, z: 0 }],
-    exits: { w: 'plaza', n: 'norte', s: 'sur' },
-  },
-  oeste: {
-    name: 'Camino oeste',
-    doors: [{ id: 'ayuntamiento', label: 'Ayuntamiento', x: -6, z: 0 }],
-    exits: { e: 'plaza', n: 'norte', s: 'sur' },
-  },
-  sur: {
-    name: 'Descampado sur',
-    doors: [],
-    exits: { n: 'plaza', e: 'este', w: 'oeste' },
-  },
-}
-
-const INTERIORS = {
-  ayuntamiento: { name: 'Ayuntamiento', color: 0x4a3a28 },
-  monasterio: { name: 'Monasterio', color: 0x3a3a4a },
-  posada: { name: 'Posada', color: 0x4a2a22 },
-}
-
+const WORLD = 120
 const $ = (id) => document.getElementById(id)
+
+const BUILDINGS = [
+  {
+    id: 'ayuntamiento',
+    name: 'Ayuntamiento',
+    x: -22,
+    z: -18,
+    w: 10,
+    d: 8,
+    h: 6,
+    color: 0x6b5344,
+    roof: 0x3a2a22,
+  },
+  {
+    id: 'monasterio',
+    name: 'Monasterio',
+    x: 20,
+    z: -22,
+    w: 9,
+    d: 11,
+    h: 7,
+    color: 0x5a5a68,
+    roof: 0x2a2a35,
+    tower: true,
+  },
+  {
+    id: 'posada',
+    name: 'Posada',
+    x: 8,
+    z: 24,
+    w: 11,
+    d: 7,
+    h: 5,
+    color: 0x7a4a32,
+    roof: 0x4a2018,
+  },
+]
+
 const state = {
   running: false,
   you: null,
@@ -48,7 +49,6 @@ const state = {
   youActions: 10,
   revealedMayor: false,
   night: 0,
-  sector: 'plaza',
   inside: null,
   nearDoor: null,
   startedAt: 0,
@@ -56,10 +56,10 @@ const state = {
   move: { x: 0, z: 0 },
 }
 
-let renderer, scene, camera, player, clock
+let renderer, scene, camera, player, clock, worldRoot, interiorRoot
+let colliders = []
 let doorMeshes = []
-let worldRoot
-const keys = { active: false }
+let exteriorVisible = true
 
 function show(id) {
   for (const el of document.querySelectorAll('.screen')) el.classList.remove('active')
@@ -71,39 +71,314 @@ function toast(msg) {
   t.textContent = msg
   t.style.display = 'block'
   clearTimeout(toast._t)
-  toast._t = setTimeout(() => { t.style.display = 'none' }, 2200)
+  toast._t = setTimeout(() => {
+    t.style.display = 'none'
+  }, 2200)
 }
 
-function crier(t) { $('crier').textContent = t }
+function crier(t) {
+  $('crier').textContent = t
+}
 
 function initThree() {
   const canvas = $('c')
   renderer = new THREE.WebGLRenderer({ canvas, antialias: true })
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
-  resize()
   scene = new THREE.Scene()
-  scene.background = new THREE.Color(0x87a0b4)
-  scene.fog = new THREE.Fog(0x87a0b4, 18, 42)
-  camera = new THREE.PerspectiveCamera(55, 1, 0.1, 80)
+  scene.background = new THREE.Color(0x8aa4b8)
+  scene.fog = new THREE.Fog(0x8aa4b8, 40, 95)
+  camera = new THREE.PerspectiveCamera(55, 1, 0.1, 200)
   clock = new THREE.Clock()
 
-  const hemi = new THREE.HemisphereLight(0xfff2dd, 0x3a2a18, 1.1)
-  scene.add(hemi)
-  const sun = new THREE.DirectionalLight(0xffe6c0, 0.85)
-  sun.position.set(8, 14, 6)
+  scene.add(new THREE.HemisphereLight(0xfff2dd, 0x3a2a18, 1.15))
+  const sun = new THREE.DirectionalLight(0xffe6c0, 0.9)
+  sun.position.set(20, 30, 10)
   scene.add(sun)
 
-  player = new THREE.Mesh(
-    new THREE.CapsuleGeometry(0.35, 0.9, 4, 8),
-    new THREE.MeshStandardMaterial({ color: 0xc45c26 }),
-  )
-  player.position.set(0, 0.9, 4)
+  player = makePerson(0xc45c26)
+  player.position.set(0, 0, 8)
   scene.add(player)
 
+  // quiet rival / alcalde NPC visual near plaza
+  const npc = makePerson(0x2f5d8a)
+  npc.position.set(3, 0, -2)
+  scene.add(npc)
+
   worldRoot = new THREE.Group()
+  interiorRoot = new THREE.Group()
+  interiorRoot.visible = false
   scene.add(worldRoot)
-  buildSector('plaza')
+  scene.add(interiorRoot)
+
+  buildExterior()
   window.addEventListener('resize', resize)
+  resize()
+}
+
+function makePerson(color) {
+  const g = new THREE.Group()
+  const body = new THREE.Mesh(
+    new THREE.CapsuleGeometry(0.32, 0.85, 4, 8),
+    new THREE.MeshStandardMaterial({ color }),
+  )
+  body.position.y = 0.95
+  const head = new THREE.Mesh(
+    new THREE.SphereGeometry(0.28, 10, 10),
+    new THREE.MeshStandardMaterial({ color: 0xe8c4a0 }),
+  )
+  head.position.y = 1.85
+  const hat = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.35, 0.4, 0.2, 10),
+    new THREE.MeshStandardMaterial({ color: 0x1a120c }),
+  )
+  hat.position.y = 2.1
+  g.add(body, head, hat)
+  g.userData.radius = 0.4
+  return g
+}
+
+function addMesh(parent, geo, mat, x, y, z) {
+  const m = new THREE.Mesh(geo, mat)
+  m.position.set(x, y, z)
+  parent.add(m)
+  return m
+}
+
+function addCollider(x, z, w, d) {
+  colliders.push({
+    minX: x - w / 2,
+    maxX: x + w / 2,
+    minZ: z - d / 2,
+    maxZ: z + d / 2,
+  })
+}
+
+function makeSign(text, x, y, z, rotY) {
+  const g = new THREE.Group()
+  const board = new THREE.Mesh(
+    new THREE.BoxGeometry(2.4, 0.7, 0.08),
+    new THREE.MeshStandardMaterial({ color: 0xf0e0c0 }),
+  )
+  const post = new THREE.Mesh(
+    new THREE.BoxGeometry(0.1, 1.4, 0.1),
+    new THREE.MeshStandardMaterial({ color: 0x3a2a18 }),
+  )
+  post.position.y = -0.9
+  g.add(board, post)
+
+  const canvas = document.createElement('canvas')
+  canvas.width = 256
+  canvas.height = 64
+  const ctx = canvas.getContext('2d')
+  ctx.fillStyle = '#f0e0c0'
+  ctx.fillRect(0, 0, 256, 64)
+  ctx.fillStyle = '#1a1008'
+  ctx.font = 'bold 28px sans-serif'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(text, 128, 32)
+  const tex = new THREE.CanvasTexture(canvas)
+  const label = new THREE.Mesh(
+    new THREE.PlaneGeometry(2.2, 0.55),
+    new THREE.MeshBasicMaterial({ map: tex }),
+  )
+  label.position.z = 0.05
+  g.add(label)
+  g.position.set(x, y, z)
+  g.rotation.y = rotY || 0
+  return g
+}
+
+function buildBuilding(b) {
+  const g = new THREE.Group()
+  const bodyMat = new THREE.MeshStandardMaterial({ color: b.color })
+  const roofMat = new THREE.MeshStandardMaterial({ color: b.roof })
+  const body = new THREE.Mesh(new THREE.BoxGeometry(b.w, b.h, b.d), bodyMat)
+  body.position.y = b.h / 2
+  g.add(body)
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(b.w + 0.8, 0.5, b.d + 0.8), roofMat)
+  roof.position.y = b.h + 0.2
+  g.add(roof)
+  if (b.tower) {
+    const tower = new THREE.Mesh(new THREE.BoxGeometry(2.5, b.h + 3, 2.5), bodyMat)
+    tower.position.set(-b.w / 2 + 1.5, (b.h + 3) / 2, -b.d / 2 + 1.5)
+    g.add(tower)
+    const spire = new THREE.Mesh(
+      new THREE.ConeGeometry(1.4, 2.2, 8),
+      new THREE.MeshStandardMaterial({ color: 0x222230 }),
+    )
+    spire.position.set(-b.w / 2 + 1.5, b.h + 4.2, -b.d / 2 + 1.5)
+    g.add(spire)
+  }
+  // door on +Z face
+  const door = new THREE.Mesh(
+    new THREE.BoxGeometry(1.4, 2.3, 0.2),
+    new THREE.MeshStandardMaterial({ color: 0x1a1008, emissive: 0x000000, emissiveIntensity: 0 }),
+  )
+  door.position.set(0, 1.15, b.d / 2 + 0.05)
+  door.userData = { doorId: b.id, label: b.name }
+  g.add(door)
+  doorMeshes.push(door)
+
+  const sign = makeSign(b.name, b.w / 2 - 0.2, 2.2, b.d / 2 + 0.6, 0)
+  g.add(sign)
+
+  g.position.set(b.x, 0, b.z)
+  worldRoot.add(g)
+  addCollider(b.x, b.z, b.w + 0.4, b.d + 0.4)
+}
+
+function buildExterior() {
+  colliders = []
+  doorMeshes = []
+  while (worldRoot.children.length) worldRoot.remove(worldRoot.children[0])
+
+  const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(WORLD * 2, WORLD * 2),
+    new THREE.MeshStandardMaterial({ color: 0x6e5a3d }),
+  )
+  ground.rotation.x = -Math.PI / 2
+  worldRoot.add(ground)
+
+  // plaza markers / gallows
+  const pole = new THREE.Mesh(
+    new THREE.BoxGeometry(0.25, 4, 0.25),
+    new THREE.MeshStandardMaterial({ color: 0x2a1c12 }),
+  )
+  pole.position.set(0, 2, 0)
+  const beam = new THREE.Mesh(
+    new THREE.BoxGeometry(3, 0.25, 0.25),
+    new THREE.MeshStandardMaterial({ color: 0x2a1c12 }),
+  )
+  beam.position.set(0, 3.9, 0)
+  worldRoot.add(pole, beam)
+  worldRoot.add(makeSign('Plaza', -2.5, 1.6, 2.5, 0))
+
+  // scattered props (non-blocking small)
+  for (let i = 0; i < 18; i++) {
+    const x = (Math.random() - 0.5) * 90
+    const z = (Math.random() - 0.5) * 90
+    if (Math.hypot(x, z) < 12) continue
+    const rock = new THREE.Mesh(
+      new THREE.BoxGeometry(1 + Math.random(), 0.5, 1 + Math.random()),
+      new THREE.MeshStandardMaterial({ color: 0x5a5040 }),
+    )
+    rock.position.set(x, 0.25, z)
+    worldRoot.add(rock)
+  }
+
+  for (const b of BUILDINGS) buildBuilding(b)
+  exteriorVisible = true
+  worldRoot.visible = true
+  interiorRoot.visible = false
+  $('sectorTag').textContent = 'Salem · exterior'
+}
+
+function buildInterior(id) {
+  while (interiorRoot.children.length) interiorRoot.remove(interiorRoot.children[0])
+  const b = BUILDINGS.find((x) => x.id === id)
+  const floor = new THREE.Mesh(
+    new THREE.PlaneGeometry(14, 14),
+    new THREE.MeshStandardMaterial({ color: b ? b.color : 0x4a3a28 }),
+  )
+  floor.rotation.x = -Math.PI / 2
+  interiorRoot.add(floor)
+  const wallMat = new THREE.MeshStandardMaterial({ color: 0x2a2018 })
+  ;[
+    [0, 2, -6.5, 12, 4, 0.4],
+    [0, 2, 6.5, 12, 4, 0.4],
+    [-6.5, 2, 0, 0.4, 4, 12],
+    [6.5, 2, 0, 0.4, 4, 12],
+  ].forEach(([x, y, z, sx, sy, sz]) => {
+    const w = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), wallMat)
+    w.position.set(x, y, z)
+    interiorRoot.add(w)
+  })
+  const door = new THREE.Mesh(
+    new THREE.BoxGeometry(1.5, 2.3, 0.2),
+    new THREE.MeshStandardMaterial({ color: 0x111, emissive: 0xc45c26, emissiveIntensity: 0.65 }),
+  )
+  door.position.set(0, 1.15, 6.3)
+  door.userData = { doorId: id, label: 'Salida', exit: true }
+  interiorRoot.add(door)
+  doorMeshes = [door]
+  interiorRoot.add(makeSign(b?.name || id, -2.2, 2.4, 6.1, 0))
+
+  state.inside = id
+  exteriorVisible = false
+  worldRoot.visible = false
+  interiorRoot.visible = true
+  player.position.set(0, 0, 3)
+  $('sectorTag').textContent = b?.name || id
+  $('btnEnter').disabled = false
+  $('btnEnter').textContent = 'SALIR'
+  crier(`Dentro de ${b?.name || id}. Acercate a la puerta brillante para salir.`)
+}
+
+function resolveMove(fromX, fromZ, toX, toZ, radius) {
+  if (state.inside) {
+    toX = THREE.MathUtils.clamp(toX, -5.5, 5.5)
+    toZ = THREE.MathUtils.clamp(toZ, -5.5, 5.5)
+    return { x: toX, z: toZ }
+  }
+  let x = toX
+  let z = toZ
+  // try full move, then slide
+  if (!hits(x, z, radius)) return { x, z }
+  if (!hits(toX, fromZ, radius)) return { x: toX, z: fromZ }
+  if (!hits(fromX, toZ, radius)) return { x: fromX, z: toZ }
+  return { x: fromX, z: fromZ }
+}
+
+function hits(x, z, radius) {
+  for (const c of colliders) {
+    const nearestX = THREE.MathUtils.clamp(x, c.minX, c.maxX)
+    const nearestZ = THREE.MathUtils.clamp(z, c.minZ, c.maxZ)
+    const dx = x - nearestX
+    const dz = z - nearestZ
+    if (dx * dx + dz * dz < radius * radius) return true
+  }
+  return false
+}
+
+function updateDoors() {
+  state.nearDoor = null
+  let best = null
+  let bestDist = 1.85
+  for (const door of doorMeshes) {
+    door.updateWorldMatrix(true, false)
+    const wp = new THREE.Vector3()
+    door.getWorldPosition(wp)
+    // only count approach from outside (+Z local for exterior doors)
+    const dx = player.position.x - wp.x
+    const dz = player.position.z - wp.z
+    const dist = Math.hypot(dx, dz)
+    const mat = door.material
+    const facingOk = state.inside || door.userData.exit ? true : dz > 0.15
+    if (dist < 1.85 && facingOk) {
+      mat.emissive.setHex(0xc45c26)
+      mat.emissiveIntensity = 0.5 + Math.sin(performance.now() / 180) * 0.25
+      if (dist < bestDist) {
+        bestDist = dist
+        best = door.userData
+      }
+    } else if (!door.userData.exit) {
+      mat.emissive.setHex(0x000000)
+      mat.emissiveIntensity = 0
+    }
+  }
+  state.nearDoor = best
+  const btn = $('btnEnter')
+  if (state.inside) {
+    btn.disabled = !best
+    btn.textContent = best ? 'SALIR' : 'SALIR'
+  } else if (best) {
+    btn.disabled = false
+    btn.textContent = `ENTRAR · ${best.label}`
+  } else {
+    btn.disabled = true
+    btn.textContent = 'ENTRAR'
+  }
 }
 
 function resize() {
@@ -117,202 +392,27 @@ function resize() {
   }
 }
 
-function clearWorld() {
-  while (worldRoot.children.length) {
-    const o = worldRoot.children.pop()
-    o.traverse((c) => {
-      if (c.geometry) c.geometry.dispose()
-      if (c.material) {
-        if (Array.isArray(c.material)) c.material.forEach((m) => m.dispose())
-        else c.material.dispose()
-      }
-    })
-  }
-  doorMeshes = []
-}
-
-function addBox(x, y, z, sx, sy, sz, color) {
-  const m = new THREE.Mesh(
-    new THREE.BoxGeometry(sx, sy, sz),
-    new THREE.MeshStandardMaterial({ color }),
-  )
-  m.position.set(x, y, z)
-  worldRoot.add(m)
-  return m
-}
-
-function buildSector(id) {
-  clearWorld()
-  state.sector = id
-  state.inside = null
-  state.nearDoor = null
-  const def = SECTORS[id]
-  $('sectorTag').textContent = def.name
-  $('btnEnter').disabled = true
-
-  // ground
-  const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(40, 40),
-    new THREE.MeshStandardMaterial({ color: 0x6b5a3e }),
-  )
-  ground.rotation.x = -Math.PI / 2
-  worldRoot.add(ground)
-
-  // simple “city” props
-  addBox(-12, 1.2, -12, 3, 2.4, 3, 0x5a4634)
-  addBox(12, 1.5, -10, 4, 3, 3, 0x4a4038)
-  addBox(-10, 1, 10, 2.5, 2, 2.5, 0x554433)
-  addBox(11, 0.8, 9, 3, 1.6, 2, 0x4a3828)
-  // gallows hint in plaza
-  if (id === 'plaza') {
-    addBox(0, 1.6, -2, 0.2, 3.2, 0.2, 0x2a1c12)
-    addBox(0, 3.1, -2, 2.2, 0.2, 0.2, 0x2a1c12)
-  }
-
-  for (const d of def.doors) {
-    const building = addBox(d.x, 1.6, d.z, 3.2, 3.2, 3.2, 0x3d2f24)
-    const door = new THREE.Mesh(
-      new THREE.BoxGeometry(1.1, 2.1, 0.15),
-      new THREE.MeshStandardMaterial({
-        color: 0x1a1008,
-        emissive: 0x000000,
-        emissiveIntensity: 0,
-      }),
-    )
-    door.position.set(d.x, 1.05, d.z + 1.65)
-    door.userData = { doorId: d.id, label: d.label }
-    worldRoot.add(door)
-    doorMeshes.push(door)
-    // label pole
-    addBox(d.x, 3.5, d.z, 0.15, 0.6, 0.15, 0x222)
-  }
-
-  // edge markers
-  addBox(0, 0.05, -19, 18, 0.1, 0.4, 0x8a7050)
-  addBox(0, 0.05, 19, 18, 0.1, 0.4, 0x8a7050)
-  addBox(-19, 0.05, 0, 0.4, 0.1, 18, 0x8a7050)
-  addBox(19, 0.05, 0, 0.4, 0.1, 18, 0x8a7050)
-
-  if (id === 'plaza') crier('Plaza central. El Pregonero está aquí (todos lo ven). Acercate a una puerta que brille y tocá ENTRAR.')
-  else crier(`Estás en ${def.name}.`)
-}
-
-function buildInterior(id) {
-  clearWorld()
-  state.inside = id
-  state.nearDoor = { id, label: INTERIORS[id].name, exit: true }
-  $('sectorTag').textContent = INTERIORS[id].name
-  $('btnEnter').disabled = false
-  $('btnEnter').textContent = 'SALIR'
-
-  const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(14, 14),
-    new THREE.MeshStandardMaterial({ color: INTERIORS[id].color }),
-  )
-  ground.rotation.x = -Math.PI / 2
-  worldRoot.add(ground)
-  // walls
-  addBox(0, 2, -6.5, 12, 4, 0.4, 0x2a2018)
-  addBox(0, 2, 6.5, 12, 4, 0.4, 0x2a2018)
-  addBox(-6.5, 2, 0, 0.4, 4, 12, 0x2a2018)
-  addBox(6.5, 2, 0, 0.4, 4, 12, 0x2a2018)
-  const door = new THREE.Mesh(
-    new THREE.BoxGeometry(1.4, 2.2, 0.2),
-    new THREE.MeshStandardMaterial({ color: 0x111, emissive: 0xc45c26, emissiveIntensity: 0.6 }),
-  )
-  door.position.set(0, 1.1, 6.3)
-  door.userData = { doorId: id, label: 'Salida', exit: true }
-  worldRoot.add(door)
-  doorMeshes = [door]
-  player.position.set(0, 0.9, 3)
-  crier(`Dentro de ${INTERIORS[id].name}. Tocá SALIR en la barra para volver afuera.`)
-}
-
-function updateDoors(dt) {
-  state.nearDoor = null
-  let best = null
-  let bestDist = 2.4
-  for (const door of doorMeshes) {
-    const dx = player.position.x - door.position.x
-    const dz = player.position.z - door.position.z
-    const dist = Math.hypot(dx, dz)
-    const mat = door.material
-    if (dist < 2.4) {
-      mat.emissive.setHex(0xc45c26)
-      mat.emissiveIntensity = 0.55 + Math.sin(performance.now() / 200) * 0.2
-      if (dist < bestDist) {
-        bestDist = dist
-        best = door.userData
-      }
-    } else if (!door.userData.exit) {
-      mat.emissive.setHex(0x000000)
-      mat.emissiveIntensity = 0
-    }
-  }
-  state.nearDoor = best
-  const btn = $('btnEnter')
-  if (state.inside) {
-    btn.disabled = false
-    btn.textContent = 'SALIR'
-  } else if (best) {
-    btn.disabled = false
-    btn.textContent = `ENTRAR · ${best.label}`
-  } else {
-    btn.disabled = true
-    btn.textContent = 'ENTRAR'
-  }
-}
-
-function tryEdgeTransition() {
-  if (state.inside) return
-  const def = SECTORS[state.sector]
-  const lim = 17.5
-  let next = null
-  let spawn = null
-  if (player.position.z < -lim && def.exits.n) {
-    next = def.exits.n
-    spawn = { x: player.position.x, z: 16 }
-  } else if (player.position.z > lim && def.exits.s) {
-    next = def.exits.s
-    spawn = { x: player.position.x, z: -16 }
-  } else if (player.position.x > lim && def.exits.e) {
-    next = def.exits.e
-    spawn = { x: -16, z: player.position.z }
-  } else if (player.position.x < -lim && def.exits.w) {
-    next = def.exits.w
-    spawn = { x: 16, z: player.position.z }
-  }
-  if (next) {
-    buildSector(next)
-    player.position.set(spawn.x, 0.9, spawn.z)
-    toast(`Pasás a: ${SECTORS[next].name}`)
-  } else {
-    player.position.x = THREE.MathUtils.clamp(player.position.x, -18, 18)
-    player.position.z = THREE.MathUtils.clamp(player.position.z, -18, 18)
-  }
-}
-
 function tick() {
   requestAnimationFrame(tick)
   if (!renderer) return
   const dt = Math.min(clock.getDelta(), 0.05)
-  if (state.running && showGame()) {
-    const speed = 5.5
-    player.position.x += state.move.x * speed * dt
-    player.position.z += state.move.z * speed * dt
+  if (state.running && $('game').classList.contains('active')) {
+    const speed = 6
+    const fromX = player.position.x
+    const fromZ = player.position.z
+    const toX = fromX + state.move.x * speed * dt
+    const toZ = fromZ + state.move.z * speed * dt
+    const next = resolveMove(fromX, fromZ, toX, toZ, player.userData.radius || 0.4)
+    player.position.x = next.x
+    player.position.z = next.z
     if (state.move.x || state.move.z) {
       player.rotation.y = Math.atan2(state.move.x, state.move.z)
     }
-    tryEdgeTransition()
-    updateDoors(dt)
-    camera.position.set(player.position.x, 7.5, player.position.z + 9)
-    camera.lookAt(player.position.x, 1, player.position.z)
+    updateDoors()
+    camera.position.set(player.position.x, 8.2, player.position.z + 10)
+    camera.lookAt(player.position.x, 1.2, player.position.z)
   }
   renderer.render(scene, camera)
-}
-
-function showGame() {
-  return $('game').classList.contains('active')
 }
 
 function setupJoystick() {
@@ -320,9 +420,7 @@ function setupJoystick() {
   const knob = $('joyKnob')
   const base = $('joyBase')
   let pid = null
-  const center = { x: 55, y: 55 }
   const maxR = 38
-
   function setKnob(dx, dy) {
     knob.style.transform = `translate(${dx}px, ${dy}px)`
   }
@@ -373,17 +471,20 @@ function startMatch() {
   state.youActions = 10
   state.revealedMayor = false
   state.night = 0
+  state.inside = null
   state.running = true
   state.startedAt = Date.now()
   $('roleTag').textContent = state.you
-  buildSector('plaza')
-  player.position.set(0, 0.9, 5)
+  buildExterior()
+  player.position.set(0, 0, 10)
   show('game')
   resize()
   clearInterval(state.timerId)
   state.timerId = setInterval(updateTimer, 250)
   updateTimer()
-  crier(`Sos ${state.you}. El ${state.foe} está quieto. Caminá con el joystick.`)
+  crier(
+    `Sos ${state.you}. Mundo abierto de Salem: los edificios no se atraviesan. Acercate a la puerta (brilla) y tocá ENTRAR.`,
+  )
 }
 
 function updateTimer() {
@@ -393,7 +494,7 @@ function updateTimer() {
   $('timer').textContent = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
   if (left <= 0 && state.running) {
     state.running = false
-    $('endTitle').textContent = state.youHp >= state.foeHp ? 'Tiempo' : 'Tiempo'
+    $('endTitle').textContent = 'Tiempo'
     $('endText').textContent = 'Se cumplieron 30 minutos.'
     show('end')
   }
@@ -401,17 +502,19 @@ function updateTimer() {
 
 function doEnter() {
   if (state.inside) {
-    const back = state.inside
-    buildSector('plaza')
-    // spawn near that door if present
-    const door = SECTORS.plaza.doors.find((d) => d.id === back)
-    if (door) player.position.set(door.x, 0.9, door.z + 3)
-    else player.position.set(0, 0.9, 4)
+    if (!state.nearDoor) return toast('Acercate a la puerta para salir')
+    const id = state.inside
+    const b = BUILDINGS.find((x) => x.id === id)
+    state.inside = null
+    buildExterior()
+    if (b) player.position.set(b.x, 0, b.z + b.d / 2 + 2.2)
+    else player.position.set(0, 0, 8)
     $('btnEnter').textContent = 'ENTRAR'
-    toast('Salís del refugio')
+    toast('Salís del edificio')
+    crier('Volviste al exterior de Salem.')
     return
   }
-  if (!state.nearDoor) return
+  if (!state.nearDoor || state.nearDoor.exit) return
   buildInterior(state.nearDoor.id)
   toast(`Entras a ${state.nearDoor.label}`)
 }
@@ -419,31 +522,31 @@ function doEnter() {
 function openNightPanel() {
   const body = $('panelBody')
   body.innerHTML = ''
-  $('panelTitle').textContent = `Noche ${state.night + 1} · estás en ${state.inside || SECTORS[state.sector].name}`
+  $('panelTitle').textContent = `Noche ${state.night + 1}`
   const mk = (label, fn) => {
     const b = document.createElement('button')
     b.textContent = label
-    b.onclick = () => { fn(); $('panel').classList.add('hidden') }
+    b.onclick = () => {
+      fn()
+      $('panel').classList.add('hidden')
+    }
     body.appendChild(b)
   }
   mk('Pasar noche (sin acción)', () => {
     state.night += 1
-    crier(`Amanece la noche ${state.night}. Nada grave…`)
+    crier(`Amanece. Noche ${state.night} terminada.`)
   })
   if (state.you === 'Asesino') {
-    mk('Atacar rival aquí (50%)', () => {
-      // foe quiet in posada interior conceptually unless same place
-      const here = state.inside || 'aire'
-      const foeHere = 'posada'
+    mk('Atacar rival en este lugar (50%)', () => {
       state.night += 1
-      if (here !== foeHere) {
+      const here = state.inside || 'exterior'
+      if (here !== 'posada') {
         state.youActions = Math.max(0, state.youActions - 1)
-        crier('Atacaste… pero el rival no estaba en este refugio.')
-        toast('Sin acierto (−1 acción)')
+        crier('No estaba el rival acá. Sin acierto.')
+        toast('Sin acierto')
       } else {
         state.foeHp = Math.max(0, state.foeHp - 50)
-        crier(`Acuchillado: rival queda en ${state.foeHp} de vida.`)
-        toast(`Rival ${state.foeHp} HP`)
+        crier(`Acuchillado: rival ${state.foeHp} vida.`)
         if (state.foeHp <= 0) {
           state.running = false
           $('endTitle').textContent = 'Victoria'
@@ -454,22 +557,14 @@ function openNightPanel() {
     })
   }
   if (state.you === 'Alcalde') {
-    mk('Revelar identidad (Plaza)', () => {
-      if (state.sector !== 'plaza' || state.inside) {
-        toast('Solo en la Plaza, afuera')
+    mk('Revelar identidad (en Plaza exterior)', () => {
+      if (state.inside || Math.hypot(player.position.x, player.position.z) > 10) {
+        toast('Solo cerca de la Plaza, afuera')
         return
       }
       state.revealedMayor = true
       state.youActions += 10
       crier('¡El Alcalde se revela! Todos ven el cartelito.')
-      toast('Identidad revelada')
-    })
-    mk('Info: ¿dónde está el rival? (1)', () => {
-      if (state.youActions < 1) return toast('Sin acciones')
-      state.youActions -= 1
-      state.night += 1
-      crier('Nota del amanecer: el rival quieto pasa las noches en la Posada.')
-      toast('Rival en Posada')
     })
   }
   $('panel').classList.remove('hidden')
@@ -494,5 +589,4 @@ $('btnExit').onclick = () => {
 
 setupJoystick()
 show('menu')
-// warm three on first paint after menu interaction only
 requestAnimationFrame(tick)
