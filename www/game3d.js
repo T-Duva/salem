@@ -117,7 +117,12 @@ async function loadModels() {
   const loader = new GLTFLoader()
   const status = $('loadStatus')
   const files = [
-    ...new Set([...BUILDING_DEFS.map((b) => b.file), 'soldier.glb', 'grass-trees.glb', 'pavement-fountain.glb']),
+    ...new Set([
+      ...BUILDING_DEFS.map((b) => b.file),
+      'xbot.glb',
+      'grass-trees.glb',
+      'pavement-fountain.glb',
+    ]),
   ]
   for (const f of files) {
     status.textContent = `Cargando ${f}…`
@@ -339,26 +344,110 @@ function updateDoors() {
   }
 }
 
-function spawnPlayer() {
-  const { root, animations } = cloneTemplate('soldier.glb')
-  root.scale.setScalar(1.15)
-  // soldier often faces -Z; adjust
-  root.rotation.y = Math.PI
-  player = root
-  player.userData.radius = 0.45
-  scene.add(player)
-  if (animations?.length) {
-    mixer = new THREE.AnimationMixer(player)
-    const clip = animations.find((a) => /walk|run|idle/i.test(a.name)) || animations[0]
-    playerActions = mixer.clipAction(clip)
-    playerActions.play()
+function stripWeapons(root) {
+  const kill = []
+  root.traverse((c) => {
+    const n = `${c.name || ''}`.toLowerCase()
+    if (/weapon|gun|rifle|sword|knife|pistol|blade|axe|bow|arrow|shield|spear/.test(n)) {
+      kill.push(c)
+    }
+  })
+  for (const c of kill) {
+    if (c.parent) c.parent.remove(c)
   }
-  // NPC alcalde visual
-  const npc = cloneTemplate('soldier.glb').root
-  npc.scale.setScalar(1.1)
-  npc.position.set(4, 0, -3)
-  npc.rotation.y = Math.PI
-  scene.add(npc)
+}
+
+function tintCharacter(root, hex) {
+  root.traverse((c) => {
+    if (!c.isMesh || !c.material) return
+    const mats = Array.isArray(c.material) ? c.material : [c.material]
+    for (const m of mats) {
+      if (!m?.color) continue
+      const name = `${c.name || ''} ${m.name || ''}`.toLowerCase()
+      // clothes / body-ish
+      if (/body|shirt|torso|leg|pant|boot|hair|head|suit|cloth/.test(name) || !/eye|skin|face/.test(name)) {
+        m.color = new THREE.Color(hex)
+      }
+    }
+  })
+}
+
+function makeRoleCharacter(role) {
+  const { root, animations } = cloneTemplate('xbot.glb')
+  stripWeapons(root)
+  root.scale.setScalar(1.05)
+  // Xbot faces camera differently; keep upright
+  if (role === 'Alcalde') {
+    tintCharacter(root, 0x2f5d8a) // azul autoridad
+    // sombrero simple de alcalde
+    const hat = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.28, 0.34, 0.18, 12),
+      new THREE.MeshStandardMaterial({ color: 0x1a1a22 }),
+    )
+    hat.position.set(0, 1.85, 0)
+    root.add(hat)
+    const brim = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.42, 0.42, 0.04, 12),
+      new THREE.MeshStandardMaterial({ color: 0x111118 }),
+    )
+    brim.position.set(0, 1.76, 0)
+    root.add(brim)
+  } else {
+    tintCharacter(root, 0x1a1210) // oscuro asesino
+    // capucha simple (sin armas)
+    const hood = new THREE.Mesh(
+      new THREE.SphereGeometry(0.32, 10, 10, 0, Math.PI * 2, 0, Math.PI / 2),
+      new THREE.MeshStandardMaterial({ color: 0x0d0d0d, side: THREE.DoubleSide }),
+    )
+    hood.position.set(0, 1.72, 0)
+    root.add(hood)
+  }
+  root.userData.radius = 0.45
+  root.userData.role = role
+  root.userData.animations = animations
+  return root
+}
+
+function spawnPlayer() {
+  // se re-crea al iniciar segun rol
+  if (player) {
+    scene.remove(player)
+    player = null
+  }
+  mixer = null
+  playerActions = null
+}
+
+function attachCharacter(role, isPlayer, x, z) {
+  const root = makeRoleCharacter(role)
+  root.position.set(x, 0, z)
+  scene.add(root)
+  if (isPlayer) {
+    player = root
+    const animations = root.userData.animations || []
+    if (animations.length) {
+      mixer = new THREE.AnimationMixer(player)
+      const clip =
+        animations.find((a) => /walk|run|idle/i.test(a.name)) || animations[0]
+      playerActions = mixer.clipAction(clip)
+      playerActions.play()
+      playerActions.paused = true
+    }
+  }
+  return root
+}
+
+function clearCharacters() {
+  const remove = []
+  scene.traverse((c) => {
+    if (c.userData?.role) remove.push(c)
+  })
+  for (const c of remove) {
+    if (c.parent) c.parent.remove(c)
+  }
+  player = null
+  mixer = null
+  playerActions = null
 }
 
 function initThree() {
@@ -381,7 +470,6 @@ function initThree() {
   interiorRoot.visible = false
   scene.add(worldRoot)
   scene.add(interiorRoot)
-  spawnPlayer()
   buildExterior()
   window.addEventListener('resize', resize)
   resize()
@@ -486,13 +574,18 @@ function startMatch() {
   state.startedAt = Date.now()
   $('roleTag').textContent = state.you
   buildExterior()
-  player.position.set(0, 0, 12)
+  clearCharacters()
+  attachCharacter(state.you, true, 0, 12)
+  // rival quieto: otro modelo de rol, sin armas
+  attachCharacter(state.foe, false, 5, -4)
   show('game')
   resize()
   clearInterval(state.timerId)
   state.timerId = setInterval(updateTimer, 250)
   updateTimer()
-  crier(`Sos ${state.you}. Edificios con modelos 3D. No se atraviesan. Puerta brillante = ENTRAR.`)
+  crier(
+    `Sos ${state.you} (modelo de ${state.you}). El ${state.foe} está quieto. Nadie muestra armas. Puerta brillante = ENTRAR.`,
+  )
 }
 
 function updateTimer() {
