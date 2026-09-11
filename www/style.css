@@ -1,0 +1,53 @@
+:root {
+  --bg: #1a1210;
+  --panel: #2a1c18;
+  --ink: #f3e6d4;
+  --muted: #b9a48c;
+  --accent: #c45c26;
+  --ok: #6a9a5a;
+  --bad: #a33;
+  --line: #4a342c;
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; height: 100%; background: var(--bg); color: var(--ink);
+}
+body { display: flex; flex-direction: column; }
+button {
+  font: inherit; border: 0; border-radius: 10px; padding: 14px 18px;
+  background: var(--accent); color: #fff; font-weight: 700;
+}
+button.secondary { background: #3d2a24; color: var(--ink); }
+button:disabled { opacity: 0.45; }
+.screen { display: none; flex: 1; flex-direction: column; padding: 16px; gap: 12px; overflow: auto; }
+.screen.active { display: flex; }
+.hero {
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; text-align: center;
+}
+.hero img { width: 96px; height: 96px; object-fit: contain; }
+.hero h1 { margin: 0; font-size: 1.8rem; letter-spacing: 0.04em; }
+.hero p { margin: 0; color: var(--muted); max-width: 28ch; }
+.row { display: flex; gap: 10px; flex-wrap: wrap; }
+.row button { flex: 1; min-width: 120px; }
+.card {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px;
+}
+.muted { color: var(--muted); font-size: 0.92rem; }
+.tag { display: inline-block; padding: 2px 8px; border-radius: 999px; background: #3d2a24; font-size: 0.8rem; }
+.log {
+  background: #120c0a; border-radius: 10px; padding: 10px; max-height: 180px; overflow: auto;
+  font-size: 0.85rem; line-height: 1.35; white-space: pre-wrap;
+}
+.place-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.place-grid button { background: #3d2a24; }
+.place-grid button.here { outline: 2px solid var(--accent); }
+.bar {
+  height: 10px; background: #120c0a; border-radius: 999px; overflow: hidden; margin-top: 6px;
+}
+.bar > span { display: block; height: 100%; background: var(--ok); }
+.bar.enemy > span { background: var(--bad); }
+#toast {
+  position: fixed; left: 12px; right: 12px; bottom: 16px; display: none;
+  background: #3d2a24; border: 1px solid var(--line); border-radius: 12px; padding: 12px; z-index: 5;
+}

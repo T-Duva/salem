@@ -1,0 +1,10 @@
+{
+  "name": "salem-prototipo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "apk": "node tools/build-apk.mjs",
+    "publish:apk": "node tools/publish-apk.mjs"
+  }
+}

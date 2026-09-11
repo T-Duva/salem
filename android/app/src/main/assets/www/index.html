@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Salem</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="icon" href="icon.png" />
+</head>
+<body>
+  <section id="menu" class="screen active">
+    <div class="hero">
+      <img src="icon.png" alt="Horca" />
+      <h1>SALEM</h1>
+      <p>Prueba V1 — solo vos jugás. 30 minutos máx.</p>
+      <div class="row" style="width:100%;max-width:320px">
+        <button id="btnStart">Iniciar partida</button>
+        <button id="btnExit" class="secondary">Salir</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="game" class="screen">
+    <div class="card">
+      <div class="row" style="justify-content:space-between;align-items:center">
+        <div>
+          <div><span class="tag" id="phaseTag">Día</span> <span class="tag" id="nightTag">Noche 0</span></div>
+          <div style="margin-top:6px">Vos: <strong id="youRole"></strong> · Rival quieto: <strong id="foeRole"></strong></div>
+        </div>
+        <div class="muted" id="timer">30:00</div>
+      </div>
+      <div style="margin-top:10px">Tu vida <span id="youHp">100</span>
+        <div class="bar"><span id="youBar" style="width:100%"></span></div>
+      </div>
+      <div style="margin-top:8px">Rival <span id="foeHp">100</span>
+        <div class="bar enemy"><span id="foeBar" style="width:100%"></span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div><strong>Pregonero</strong> <span class="tag">visible · Plaza</span></div>
+      <p class="muted" id="crier" style="margin:8px 0 0">Bienvenidos a Salem…</p>
+    </div>
+
+    <div class="card">
+      <div><strong>Lugar actual:</strong> <span id="placeNow">Plaza</span></div>
+      <p class="muted" id="placeHint" style="margin:6px 0 10px"></p>
+      <div class="place-grid" id="places"></div>
+    </div>
+
+    <div class="card" id="actionsCard">
+      <strong>Acciones</strong>
+      <div class="row" style="margin-top:10px" id="actions"></div>
+      <p class="muted" id="actionHint" style="margin-top:8px"></p>
+    </div>
+
+    <div class="card">
+      <strong>Log</strong>
+      <div class="log" id="log"></div>
+    </div>
+
+    <div class="row">
+      <button id="btnMenu" class="secondary">Menú</button>
+    </div>
+  </section>
+
+  <section id="end" class="screen">
+    <div class="hero">
+      <h1 id="endTitle">Fin</h1>
+      <p id="endText"></p>
+      <button id="btnAgain">Volver al menú</button>
+    </div>
+  </section>
+
+  <div id="toast"></div>
+  <script src="game.js"></script>
+</body>
+</html>
