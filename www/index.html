@@ -6,15 +6,24 @@
   <title>Salem 3D</title>
   <link rel="stylesheet" href="style.css" />
   <link rel="icon" href="icon.png" />
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "./lib/three.module.js",
+      "three/addons/loaders/GLTFLoader.js": "./lib/GLTFLoader.js"
+    }
+  }
+  </script>
 </head>
 <body>
   <section id="menu" class="screen active">
     <div class="hero">
       <img src="icon.png" alt="Horca" />
       <h1>SALEM</h1>
-      <p>Prueba 3D — joystick · puertas · refugios</p>
+      <p>Modelos 3D · mundo abierto · colisión</p>
+      <div id="loadStatus" class="muted">Cargando modelos…</div>
       <div class="row" style="width:100%;max-width:320px">
-        <button id="btnStart">Iniciar partida</button>
+        <button id="btnStart" disabled>Iniciar partida</button>
         <button id="btnExit" class="secondary">Salir</button>
       </div>
     </div>
@@ -24,7 +33,7 @@
     <canvas id="c"></canvas>
     <div id="hud">
       <div id="hudTop">
-        <span class="tag" id="sectorTag">Plaza</span>
+        <span class="tag" id="sectorTag">Salem</span>
         <span class="tag" id="roleTag">—</span>
         <span class="tag" id="timer">30:00</span>
       </div>
@@ -52,8 +61,7 @@
   </section>
 
   <div id="toast"></div>
-  <script src="lib/three.min.js"></script>
-  <script src="game3d.js"></script>
+  <script type="module" src="game3d.js"></script>
   <script src="autoUpdate.js"></script>
 </body>
 </html>
