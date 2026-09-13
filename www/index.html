@@ -6,14 +6,6 @@
   <title>Salem 3D</title>
   <link rel="stylesheet" href="style.css" />
   <link rel="icon" href="icon.png" />
-  <script type="importmap">
-  {
-    "imports": {
-      "three": "./lib/three.module.js",
-      "three/addons/loaders/GLTFLoader.js": "./lib/GLTFLoader.js"
-    }
-  }
-  </script>
 </head>
 <body>
   <section id="menu" class="screen active">
@@ -62,7 +54,7 @@
   </section>
 
   <div id="toast"></div>
-  <script type="module" src="game3d.js"></script>
+  <script src="game.bundle.js"></script>
   <script src="autoUpdate.js"></script>
 </body>
 </html>
