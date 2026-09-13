@@ -24730,7 +24730,21 @@
     { id: "posada", name: "Posada", x: 8, z: 34, rotY: -Math.PI * 0.04 }
   ];
   var PLAYABLE_ROLES = ["Alcalde", "Asesino", "Dama de compa\xF1\xEDa"];
+  var CHAR_FILES = {
+    "Alcalde": "chars/Knight.glb",
+    "Asesino": "chars/Rogue_Hooded.glb",
+    "Dama de compa\xF1\xEDa": "chars/Mage.glb",
+    "Pregonero": "chars/Barbarian.glb"
+  };
+  var CHAR_SCALE = 0.52;
   var VILLAGE_FILES = [
+    "DoorFrame_Flat_WoodDark.gltf",
+    "Stairs_Exterior_Platform.gltf",
+    "WindowShutters_Wide_Flat_Closed.gltf",
+    "Prop_Vine5.gltf",
+    "Prop_Vine4.gltf",
+    "Roof_RoundTiles_8x8.gltf",
+    "Wall_Arch.gltf",
     "Wall_UnevenBrick_Straight.gltf",
     "Wall_UnevenBrick_Door_Flat.gltf",
     "Wall_UnevenBrick_Window_Wide_Flat.gltf",
@@ -24858,7 +24872,7 @@
     const loader = new GLTFLoader();
     const status = $("loadStatus");
     const jobs = [
-      { key: "xbot.glb", url: "./models/xbot.glb" },
+      ...Object.values(CHAR_FILES).map((f) => ({ key: f, url: `./models/${f}` })),
       ...VILLAGE_FILES.map((f) => ({ key: `village/${f}`, url: `./models/village/${f}` })),
       ...NATURE_FILES.map((f) => ({ key: `town/${f}`, url: `./models/town/${f}` }))
     ];
@@ -25257,137 +25271,46 @@
     }
     state.nearDoor = best;
   }
-  function applyRoleLook(root, role) {
-    root.traverse((c) => {
-      if (!c.isMesh || !c.material) return;
-      const mats = Array.isArray(c.material) ? c.material : [c.material];
-      const next = mats.map((m) => {
-        const mat = m.clone();
-        const name = `${c.name || ""} ${mat.name || ""}`.toLowerCase();
-        if (/eye|teeth|cornea/.test(name)) return mat;
-        if (/skin|face|head|hand|arm|neck|body/.test(name) && !/shirt|cloth|suit|pant|boot/.test(name)) {
-          mat.color = new Color(role === "Dama de compa\xF1\xEDa" ? 12884600 : 10118464);
-          mat.roughness = 0.75;
-          return mat;
-        }
-        if (role === "Alcalde") {
-          mat.color = new Color(/pant|leg|boot/.test(name) ? 1714232 : 2775696);
-        } else if (role === "Pregonero") {
-          mat.color = new Color(/pant|leg|boot/.test(name) ? 3811352 : 8017200);
-        } else if (role === "Dama de compa\xF1\xEDa") {
-          mat.color = new Color(/pant|leg|boot/.test(name) ? 1706512 : 9052224);
-        } else {
-          mat.color = new Color(1710102);
-        }
-        mat.metalness = 0.05;
-        mat.roughness = 0.8;
-        return mat;
-      });
-      c.material = Array.isArray(c.material) ? next : next[0];
-    });
-    const kill = [];
-    root.traverse((c) => {
-      const n = `${c.name || ""}`.toLowerCase();
-      if (/weapon|gun|rifle|sword|knife|pistol|blade|axe|bow|arrow|shield|spear/.test(n)) kill.push(c);
-    });
-    for (const c of kill) c.parent?.remove(c);
-    if (role === "Alcalde") {
-      const hat = new Group();
-      const top = new Mesh(
-        new CylinderGeometry(0.12, 0.13, 0.2, 12),
-        new MeshStandardMaterial({ color: 657932, roughness: 0.85 })
-      );
-      top.position.y = 1.8;
-      const brim = new Mesh(
-        new CylinderGeometry(0.24, 0.24, 0.035, 14),
-        new MeshStandardMaterial({ color: 328966, roughness: 0.9 })
-      );
-      brim.position.y = 1.7;
-      const chain = new Mesh(
-        new TorusGeometry(0.16, 0.02, 8, 20),
-        new MeshStandardMaterial({ color: 13938487, metalness: 0.8, roughness: 0.3 })
-      );
-      chain.position.set(0, 1.35, 0.12);
-      chain.rotation.x = Math.PI / 2;
-      hat.add(top, brim, chain);
-      root.add(hat);
-    } else if (role === "Asesino") {
-      const hood = new Mesh(
-        new SphereGeometry(0.2, 12, 10, 0, Math.PI * 2, 0, Math.PI / 1.6),
-        new MeshStandardMaterial({ color: 657416, side: DoubleSide, roughness: 1 })
-      );
-      hood.position.set(0, 1.68, 0);
-      const mask = new Mesh(
-        new BoxGeometry(0.22, 0.08, 0.04),
-        new MeshStandardMaterial({ color: 1118481, roughness: 0.6 })
-      );
-      mask.position.set(0, 1.55, 0.12);
-      const cloak = new Mesh(
-        new BoxGeometry(0.7, 0.95, 0.15),
-        new MeshStandardMaterial({ color: 789002, roughness: 0.95, side: DoubleSide })
-      );
-      cloak.position.set(0, 1.15, -0.2);
-      root.add(hood, mask, cloak);
-    } else if (role === "Dama de compa\xF1\xEDa") {
-      const dress = new Mesh(
-        new CylinderGeometry(0.28, 0.55, 1.05, 14),
-        new MeshStandardMaterial({ color: 9114935, roughness: 0.55, metalness: 0.08 })
-      );
-      dress.position.set(0, 0.85, 0);
-      const bodice = new Mesh(
-        new SphereGeometry(0.2, 12, 10),
-        new MeshStandardMaterial({ color: 12884600, roughness: 0.7 })
-      );
-      bodice.position.set(0, 1.38, 0.06);
-      bodice.scale.set(1.35, 0.75, 0.85);
-      const cleavage = new Mesh(
-        new SphereGeometry(0.09, 10, 10),
-        new MeshStandardMaterial({ color: 12884600, roughness: 0.65 })
-      );
-      cleavage.position.set(-0.07, 1.4, 0.16);
-      const cleavage2 = cleavage.clone();
-      cleavage2.position.x = 0.07;
-      const hair = new Mesh(
-        new SphereGeometry(0.2, 12, 12),
-        new MeshStandardMaterial({ color: 1706504, roughness: 0.8 })
-      );
-      hair.position.set(0, 1.72, -0.02);
-      hair.scale.set(1.15, 1.05, 1.2);
-      const earring = new Mesh(
-        new SphereGeometry(0.025, 8, 8),
-        new MeshStandardMaterial({ color: 16766720, metalness: 0.9, roughness: 0.25 })
-      );
-      earring.position.set(0.16, 1.58, 0.02);
-      const earring2 = earring.clone();
-      earring2.position.x = -0.16;
-      root.add(dress, bodice, cleavage, cleavage2, hair, earring, earring2);
-    }
-  }
   function makeRoleCharacter(role) {
-    if (!templates["xbot.glb"]) return makeColonialPerson(role);
+    const file = CHAR_FILES[role] || CHAR_FILES["Alcalde"];
+    if (!templates[file]) return makeColonialPerson(role);
     try {
-      const { root, animations } = cloneTemplate("xbot.glb");
-      root.scale.setScalar(1);
+      const { root, animations } = cloneTemplate(file);
+      root.scale.setScalar(CHAR_SCALE);
       root.updateMatrixWorld(true);
       const box = new Box3().setFromObject(root);
       root.position.y -= box.min.y;
+      const kill = [];
       root.traverse((c) => {
-        const n = `${c.name || ""} ${c.material?.name || ""}`.toLowerCase();
-        if (/joint|beta_joints/.test(n)) c.visible = false;
+        const n = `${c.name || ""}`.toLowerCase();
+        if (/weapon|sword|axe|bow|arrow|shield|staff|wand|dagger|knife|spear|crossbow/.test(n)) kill.push(c);
         if (c.isMesh && c.material) {
           const mats = Array.isArray(c.material) ? c.material : [c.material];
           for (const m of mats) {
             if (!m) continue;
-            m.metalness = 0.05;
-            m.roughness = 0.85;
-            m.transparent = false;
-            m.opacity = 1;
-            m.depthWrite = true;
-            m.side = FrontSide;
+            m.metalness = Math.min(m.metalness ?? 0.2, 0.35);
+            m.roughness = Math.max(m.roughness ?? 0.6, 0.45);
+            if (m.map) m.map.colorSpace = SRGBColorSpace;
           }
         }
       });
-      applyRoleLook(root, role);
+      for (const c of kill) c.parent?.remove(c);
+      if (role === "Alcalde") {
+        const chain = new Mesh(
+          new TorusGeometry(0.12, 0.015, 8, 20),
+          new MeshStandardMaterial({ color: 13938487, metalness: 0.85, roughness: 0.25 })
+        );
+        chain.position.set(0, 1.15, 0.1);
+        chain.rotation.x = Math.PI / 2;
+        root.add(chain);
+      } else if (role === "Dama de compa\xF1\xEDa") {
+        const dress = new Mesh(
+          new CylinderGeometry(0.18, 0.38, 0.85, 14),
+          new MeshStandardMaterial({ color: 9114935, roughness: 0.5, transparent: true, opacity: 0.92 })
+        );
+        dress.position.set(0, 0.7, 0);
+        root.add(dress);
+      }
       root.userData.radius = 0.4;
       root.userData.role = role;
       root.userData.animations = animations;
@@ -25548,9 +25471,12 @@
     const animations = root.userData.animations || [];
     if (!animations.length) return;
     const m = new AnimationMixer(root);
-    const walkClip = animations.find((a) => /walk/i.test(a.name)) || animations.find((a) => /run/i.test(a.name));
-    const idleClip = animations.find((a) => /idle/i.test(a.name)) || animations[0];
+    const walkClip = animations.find((a) => /^Walking_A$/i.test(a.name)) || animations.find((a) => /walking_a/i.test(a.name)) || animations.find((a) => /walk/i.test(a.name) && !/back/i.test(a.name)) || animations.find((a) => /running_a/i.test(a.name));
+    const idleClip = animations.find((a) => /^Idle$/i.test(a.name)) || animations.find((a) => /unarmed_idle/i.test(a.name)) || animations.find((a) => /idle/i.test(a.name) && !/jump|lie|sit|pose/i.test(a.name)) || animations[0];
     const actIdle = m.clipAction(idleClip);
+    if (/t-pose/i.test(idleClip.name)) {
+      console.warn("idle era T-Pose, usando Unarmed_Idle/Idle fallback");
+    }
     actIdle.play();
     actIdle.setEffectiveWeight(1);
     let actWalk = null;
@@ -25806,7 +25732,7 @@
     state.timerId = setInterval(updateTimer, 250);
     updateTimer();
     crier(
-      `Sos ${state.you}. Rival: ${state.foe} (quieto, ya no en T). D\xEDa=puertas cerradas. M\xE1s luz, barro y pasto.`
+      `Sos ${state.you} (modelo KayKit animado). Rival: ${state.foe}. Idle/caminar reales \u2014 sin T.`
     );
   }
   function updateTimer() {

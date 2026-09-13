@@ -15,7 +15,23 @@ const BUILDING_DEFS = [
 ]
 const PLAYABLE_ROLES = ['Alcalde', 'Asesino', 'Dama de compañía']
 
+const CHAR_FILES = {
+  'Alcalde': 'chars/Knight.glb',
+  'Asesino': 'chars/Rogue_Hooded.glb',
+  'Dama de compañía': 'chars/Mage.glb',
+  'Pregonero': 'chars/Barbarian.glb',
+}
+const CHAR_SCALE = 0.52 // KayKit ~3.3u → ~1.75 m
+
+
 const VILLAGE_FILES = [
+  'DoorFrame_Flat_WoodDark.gltf',
+  'Stairs_Exterior_Platform.gltf',
+  'WindowShutters_Wide_Flat_Closed.gltf',
+  'Prop_Vine5.gltf',
+  'Prop_Vine4.gltf',
+  'Roof_RoundTiles_8x8.gltf',
+  'Wall_Arch.gltf',
   'Wall_UnevenBrick_Straight.gltf',
   'Wall_UnevenBrick_Door_Flat.gltf',
   'Wall_UnevenBrick_Window_Wide_Flat.gltf',
@@ -145,7 +161,7 @@ async function loadModels() {
   const loader = new GLTFLoader()
   const status = $('loadStatus')
   const jobs = [
-    { key: 'xbot.glb', url: './models/xbot.glb' },
+    ...Object.values(CHAR_FILES).map((f) => ({ key: f, url: `./models/${f}` })),
     ...VILLAGE_FILES.map((f) => ({ key: `village/${f}`, url: `./models/village/${f}` })),
     ...NATURE_FILES.map((f) => ({ key: `town/${f}`, url: `./models/town/${f}` })),
   ]
@@ -687,32 +703,49 @@ function applyRoleLook(root, role) {
 }
 
 function makeRoleCharacter(role) {
-  if (!templates['xbot.glb']) return makeColonialPerson(role)
+  const file = CHAR_FILES[role] || CHAR_FILES['Alcalde']
+  if (!templates[file]) return makeColonialPerson(role)
   try {
-    const { root, animations } = cloneTemplate('xbot.glb')
-    // xbot YA está en metros (~1.8). NO escalar a 0.01 (eso lo hacía fantasma).
-    root.scale.setScalar(1)
+    const { root, animations } = cloneTemplate(file)
+    root.scale.setScalar(CHAR_SCALE)
     root.updateMatrixWorld(true)
     const box = new THREE.Box3().setFromObject(root)
     root.position.y -= box.min.y
-    // ocultar esqueleto "joints" (bolitas) que parece fantasma
+    // quitar armas sueltas del pack (daga/arco visibles)
+    const kill = []
     root.traverse((c) => {
-      const n = `${c.name || ''} ${c.material?.name || ''}`.toLowerCase()
-      if (/joint|beta_joints/.test(n)) c.visible = false
+      const n = `${c.name || ''}`.toLowerCase()
+      if (/weapon|sword|axe|bow|arrow|shield|staff|wand|dagger|knife|spear|crossbow/.test(n)) kill.push(c)
       if (c.isMesh && c.material) {
         const mats = Array.isArray(c.material) ? c.material : [c.material]
         for (const m of mats) {
           if (!m) continue
-          m.metalness = 0.05
-          m.roughness = 0.85
-          m.transparent = false
-          m.opacity = 1
-          m.depthWrite = true
-          m.side = THREE.FrontSide
+          m.metalness = Math.min(m.metalness ?? 0.2, 0.35)
+          m.roughness = Math.max(m.roughness ?? 0.6, 0.45)
+          if (m.map) m.map.colorSpace = THREE.SRGBColorSpace
         }
       }
     })
-    applyRoleLook(root, role)
+    for (const c of kill) c.parent?.remove(c)
+
+    // acentos de rol encima del modelo serio
+    if (role === 'Alcalde') {
+      const chain = new THREE.Mesh(
+        new THREE.TorusGeometry(0.12, 0.015, 8, 20),
+        new THREE.MeshStandardMaterial({ color: 0xd4af37, metalness: 0.85, roughness: 0.25 }),
+      )
+      chain.position.set(0, 1.15, 0.1)
+      chain.rotation.x = Math.PI / 2
+      root.add(chain)
+    } else if (role === 'Dama de compañía') {
+      const dress = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.18, 0.38, 0.85, 14),
+        new THREE.MeshStandardMaterial({ color: 0x8b1537, roughness: 0.5, transparent: true, opacity: 0.92 }),
+      )
+      dress.position.set(0, 0.7, 0)
+      root.add(dress)
+    }
+
     root.userData.radius = 0.4
     root.userData.role = role
     root.userData.animations = animations
@@ -883,9 +916,20 @@ function bindCharacterAnims(root, isPlayer) {
   const animations = root.userData.animations || []
   if (!animations.length) return
   const m = new THREE.AnimationMixer(root)
-  const walkClip = animations.find((a) => /walk/i.test(a.name)) || animations.find((a) => /run/i.test(a.name))
-  const idleClip = animations.find((a) => /idle/i.test(a.name)) || animations[0]
+  const walkClip =
+    animations.find((a) => /^Walking_A$/i.test(a.name)) ||
+    animations.find((a) => /walking_a/i.test(a.name)) ||
+    animations.find((a) => /walk/i.test(a.name) && !/back/i.test(a.name)) ||
+    animations.find((a) => /running_a/i.test(a.name))
+  const idleClip =
+    animations.find((a) => /^Idle$/i.test(a.name)) ||
+    animations.find((a) => /unarmed_idle/i.test(a.name)) ||
+    animations.find((a) => /idle/i.test(a.name) && !/jump|lie|sit|pose/i.test(a.name)) ||
+    animations[0]
   const actIdle = m.clipAction(idleClip)
+  if (/t-pose/i.test(idleClip.name)) {
+    console.warn('idle era T-Pose, usando Unarmed_Idle/Idle fallback')
+  }
   actIdle.play()
   actIdle.setEffectiveWeight(1)
   let actWalk = null
@@ -1156,7 +1200,7 @@ function startMatch() {
   state.timerId = setInterval(updateTimer, 250)
   updateTimer()
   crier(
-    `Sos ${state.you}. Rival: ${state.foe} (quieto, ya no en T). Día=puertas cerradas. Más luz, barro y pasto.`,
+    `Sos ${state.you} (modelo KayKit animado). Rival: ${state.foe}. Idle/caminar reales — sin T.`,
   )
 }
 
