@@ -125,9 +125,6 @@
   var SIGNED_RED_RGTC1_Format = 36284;
   var RED_GREEN_RGTC2_Format = 36285;
   var SIGNED_RED_GREEN_RGTC2_Format = 36286;
-  var LoopOnce = 2200;
-  var LoopRepeat = 2201;
-  var LoopPingPong = 2202;
   var InterpolateDiscrete = 2300;
   var InterpolateLinear = 2301;
   var InterpolateSmooth = 2302;
@@ -135,7 +132,6 @@
   var ZeroSlopeEnding = 2401;
   var WrapAroundEnding = 2402;
   var NormalAnimationBlendMode = 2500;
-  var AdditiveAnimationBlendMode = 2501;
   var TrianglesDrawMode = 0;
   var TriangleStripDrawMode = 1;
   var TriangleFanDrawMode = 2;
@@ -794,17 +790,17 @@
       return this;
     }
     transpose() {
-      let tmp2;
+      let tmp;
       const m = this.elements;
-      tmp2 = m[1];
+      tmp = m[1];
       m[1] = m[3];
-      m[3] = tmp2;
-      tmp2 = m[2];
+      m[3] = tmp;
+      tmp = m[2];
       m[2] = m[6];
-      m[6] = tmp2;
-      tmp2 = m[5];
+      m[6] = tmp;
+      tmp = m[5];
       m[5] = m[7];
-      m[7] = tmp2;
+      m[7] = tmp;
       return this;
     }
     getNormalMatrix(matrix4) {
@@ -3660,25 +3656,25 @@
     }
     transpose() {
       const te = this.elements;
-      let tmp2;
-      tmp2 = te[1];
+      let tmp;
+      tmp = te[1];
       te[1] = te[4];
-      te[4] = tmp2;
-      tmp2 = te[2];
+      te[4] = tmp;
+      tmp = te[2];
       te[2] = te[8];
-      te[8] = tmp2;
-      tmp2 = te[6];
+      te[8] = tmp;
+      tmp = te[6];
       te[6] = te[9];
-      te[9] = tmp2;
-      tmp2 = te[3];
+      te[9] = tmp;
+      tmp = te[3];
       te[3] = te[12];
-      te[12] = tmp2;
-      tmp2 = te[7];
+      te[12] = tmp;
+      tmp = te[7];
       te[7] = te[13];
-      te[13] = tmp2;
-      tmp2 = te[11];
+      te[13] = tmp;
+      tmp = te[11];
       te[11] = te[14];
-      te[14] = tmp2;
+      te[14] = tmp;
       return this;
     }
     setPosition(x, y, z) {
@@ -6403,20 +6399,20 @@
           );
         }
       }
-      const tmp2 = new Vector3(), tmp22 = new Vector3();
+      const tmp = new Vector3(), tmp2 = new Vector3();
       const n = new Vector3(), n2 = new Vector3();
       function handleVertex(v) {
         n.fromArray(normals, v * 3);
         n2.copy(n);
         const t = tan1[v];
-        tmp2.copy(t);
-        tmp2.sub(n.multiplyScalar(n.dot(t))).normalize();
-        tmp22.crossVectors(n2, t);
-        const test = tmp22.dot(tan2[v]);
+        tmp.copy(t);
+        tmp.sub(n.multiplyScalar(n.dot(t))).normalize();
+        tmp2.crossVectors(n2, t);
+        const test = tmp2.dot(tan2[v]);
         const w = test < 0 ? -1 : 1;
-        tangents[v * 4] = tmp2.x;
-        tangents[v * 4 + 1] = tmp2.y;
-        tangents[v * 4 + 2] = tmp2.z;
+        tangents[v * 4] = tmp.x;
+        tangents[v * 4 + 1] = tmp.y;
+        tangents[v * 4 + 2] = tmp.z;
         tangents[v * 4 + 3] = w;
       }
       for (let i = 0, il = groups.length; i < il; ++i) {
@@ -7005,9 +7001,9 @@
   function mergeUniforms(uniforms) {
     const merged = {};
     for (let u = 0; u < uniforms.length; u++) {
-      const tmp2 = cloneUniforms(uniforms[u]);
-      for (const p in tmp2) {
-        merged[p] = tmp2[p];
+      const tmp = cloneUniforms(uniforms[u]);
+      for (const p in tmp) {
+        merged[p] = tmp[p];
       }
     }
     return merged;
@@ -18831,1142 +18827,6 @@
       this.needsUpdate = true;
     }
   };
-  var Curve = class {
-    constructor() {
-      this.type = "Curve";
-      this.arcLengthDivisions = 200;
-    }
-    // Virtual base class method to overwrite and implement in subclasses
-    //	- t [0 .. 1]
-    getPoint() {
-      console.warn("THREE.Curve: .getPoint() not implemented.");
-      return null;
-    }
-    // Get point at relative position in curve according to arc length
-    // - u [0 .. 1]
-    getPointAt(u, optionalTarget) {
-      const t = this.getUtoTmapping(u);
-      return this.getPoint(t, optionalTarget);
-    }
-    // Get sequence of points using getPoint( t )
-    getPoints(divisions = 5) {
-      const points = [];
-      for (let d = 0; d <= divisions; d++) {
-        points.push(this.getPoint(d / divisions));
-      }
-      return points;
-    }
-    // Get sequence of points using getPointAt( u )
-    getSpacedPoints(divisions = 5) {
-      const points = [];
-      for (let d = 0; d <= divisions; d++) {
-        points.push(this.getPointAt(d / divisions));
-      }
-      return points;
-    }
-    // Get total curve arc length
-    getLength() {
-      const lengths = this.getLengths();
-      return lengths[lengths.length - 1];
-    }
-    // Get list of cumulative segment lengths
-    getLengths(divisions = this.arcLengthDivisions) {
-      if (this.cacheArcLengths && this.cacheArcLengths.length === divisions + 1 && !this.needsUpdate) {
-        return this.cacheArcLengths;
-      }
-      this.needsUpdate = false;
-      const cache = [];
-      let current, last = this.getPoint(0);
-      let sum = 0;
-      cache.push(0);
-      for (let p = 1; p <= divisions; p++) {
-        current = this.getPoint(p / divisions);
-        sum += current.distanceTo(last);
-        cache.push(sum);
-        last = current;
-      }
-      this.cacheArcLengths = cache;
-      return cache;
-    }
-    updateArcLengths() {
-      this.needsUpdate = true;
-      this.getLengths();
-    }
-    // Given u ( 0 .. 1 ), get a t to find p. This gives you points which are equidistant
-    getUtoTmapping(u, distance) {
-      const arcLengths = this.getLengths();
-      let i = 0;
-      const il = arcLengths.length;
-      let targetArcLength;
-      if (distance) {
-        targetArcLength = distance;
-      } else {
-        targetArcLength = u * arcLengths[il - 1];
-      }
-      let low = 0, high = il - 1, comparison;
-      while (low <= high) {
-        i = Math.floor(low + (high - low) / 2);
-        comparison = arcLengths[i] - targetArcLength;
-        if (comparison < 0) {
-          low = i + 1;
-        } else if (comparison > 0) {
-          high = i - 1;
-        } else {
-          high = i;
-          break;
-        }
-      }
-      i = high;
-      if (arcLengths[i] === targetArcLength) {
-        return i / (il - 1);
-      }
-      const lengthBefore = arcLengths[i];
-      const lengthAfter = arcLengths[i + 1];
-      const segmentLength = lengthAfter - lengthBefore;
-      const segmentFraction = (targetArcLength - lengthBefore) / segmentLength;
-      const t = (i + segmentFraction) / (il - 1);
-      return t;
-    }
-    // Returns a unit vector tangent at t
-    // In case any sub curve does not implement its tangent derivation,
-    // 2 points a small delta apart will be used to find its gradient
-    // which seems to give a reasonable approximation
-    getTangent(t, optionalTarget) {
-      const delta = 1e-4;
-      let t1 = t - delta;
-      let t2 = t + delta;
-      if (t1 < 0) t1 = 0;
-      if (t2 > 1) t2 = 1;
-      const pt1 = this.getPoint(t1);
-      const pt2 = this.getPoint(t2);
-      const tangent = optionalTarget || (pt1.isVector2 ? new Vector2() : new Vector3());
-      tangent.copy(pt2).sub(pt1).normalize();
-      return tangent;
-    }
-    getTangentAt(u, optionalTarget) {
-      const t = this.getUtoTmapping(u);
-      return this.getTangent(t, optionalTarget);
-    }
-    computeFrenetFrames(segments, closed) {
-      const normal = new Vector3();
-      const tangents = [];
-      const normals = [];
-      const binormals = [];
-      const vec = new Vector3();
-      const mat = new Matrix4();
-      for (let i = 0; i <= segments; i++) {
-        const u = i / segments;
-        tangents[i] = this.getTangentAt(u, new Vector3());
-      }
-      normals[0] = new Vector3();
-      binormals[0] = new Vector3();
-      let min = Number.MAX_VALUE;
-      const tx = Math.abs(tangents[0].x);
-      const ty = Math.abs(tangents[0].y);
-      const tz = Math.abs(tangents[0].z);
-      if (tx <= min) {
-        min = tx;
-        normal.set(1, 0, 0);
-      }
-      if (ty <= min) {
-        min = ty;
-        normal.set(0, 1, 0);
-      }
-      if (tz <= min) {
-        normal.set(0, 0, 1);
-      }
-      vec.crossVectors(tangents[0], normal).normalize();
-      normals[0].crossVectors(tangents[0], vec);
-      binormals[0].crossVectors(tangents[0], normals[0]);
-      for (let i = 1; i <= segments; i++) {
-        normals[i] = normals[i - 1].clone();
-        binormals[i] = binormals[i - 1].clone();
-        vec.crossVectors(tangents[i - 1], tangents[i]);
-        if (vec.length() > Number.EPSILON) {
-          vec.normalize();
-          const theta = Math.acos(clamp(tangents[i - 1].dot(tangents[i]), -1, 1));
-          normals[i].applyMatrix4(mat.makeRotationAxis(vec, theta));
-        }
-        binormals[i].crossVectors(tangents[i], normals[i]);
-      }
-      if (closed === true) {
-        let theta = Math.acos(clamp(normals[0].dot(normals[segments]), -1, 1));
-        theta /= segments;
-        if (tangents[0].dot(vec.crossVectors(normals[0], normals[segments])) > 0) {
-          theta = -theta;
-        }
-        for (let i = 1; i <= segments; i++) {
-          normals[i].applyMatrix4(mat.makeRotationAxis(tangents[i], theta * i));
-          binormals[i].crossVectors(tangents[i], normals[i]);
-        }
-      }
-      return {
-        tangents,
-        normals,
-        binormals
-      };
-    }
-    clone() {
-      return new this.constructor().copy(this);
-    }
-    copy(source) {
-      this.arcLengthDivisions = source.arcLengthDivisions;
-      return this;
-    }
-    toJSON() {
-      const data = {
-        metadata: {
-          version: 4.6,
-          type: "Curve",
-          generator: "Curve.toJSON"
-        }
-      };
-      data.arcLengthDivisions = this.arcLengthDivisions;
-      data.type = this.type;
-      return data;
-    }
-    fromJSON(json) {
-      this.arcLengthDivisions = json.arcLengthDivisions;
-      return this;
-    }
-  };
-  var EllipseCurve = class extends Curve {
-    constructor(aX = 0, aY = 0, xRadius = 1, yRadius = 1, aStartAngle = 0, aEndAngle = Math.PI * 2, aClockwise = false, aRotation = 0) {
-      super();
-      this.isEllipseCurve = true;
-      this.type = "EllipseCurve";
-      this.aX = aX;
-      this.aY = aY;
-      this.xRadius = xRadius;
-      this.yRadius = yRadius;
-      this.aStartAngle = aStartAngle;
-      this.aEndAngle = aEndAngle;
-      this.aClockwise = aClockwise;
-      this.aRotation = aRotation;
-    }
-    getPoint(t, optionalTarget) {
-      const point = optionalTarget || new Vector2();
-      const twoPi = Math.PI * 2;
-      let deltaAngle = this.aEndAngle - this.aStartAngle;
-      const samePoints = Math.abs(deltaAngle) < Number.EPSILON;
-      while (deltaAngle < 0) deltaAngle += twoPi;
-      while (deltaAngle > twoPi) deltaAngle -= twoPi;
-      if (deltaAngle < Number.EPSILON) {
-        if (samePoints) {
-          deltaAngle = 0;
-        } else {
-          deltaAngle = twoPi;
-        }
-      }
-      if (this.aClockwise === true && !samePoints) {
-        if (deltaAngle === twoPi) {
-          deltaAngle = -twoPi;
-        } else {
-          deltaAngle = deltaAngle - twoPi;
-        }
-      }
-      const angle = this.aStartAngle + t * deltaAngle;
-      let x = this.aX + this.xRadius * Math.cos(angle);
-      let y = this.aY + this.yRadius * Math.sin(angle);
-      if (this.aRotation !== 0) {
-        const cos = Math.cos(this.aRotation);
-        const sin = Math.sin(this.aRotation);
-        const tx = x - this.aX;
-        const ty = y - this.aY;
-        x = tx * cos - ty * sin + this.aX;
-        y = tx * sin + ty * cos + this.aY;
-      }
-      return point.set(x, y);
-    }
-    copy(source) {
-      super.copy(source);
-      this.aX = source.aX;
-      this.aY = source.aY;
-      this.xRadius = source.xRadius;
-      this.yRadius = source.yRadius;
-      this.aStartAngle = source.aStartAngle;
-      this.aEndAngle = source.aEndAngle;
-      this.aClockwise = source.aClockwise;
-      this.aRotation = source.aRotation;
-      return this;
-    }
-    toJSON() {
-      const data = super.toJSON();
-      data.aX = this.aX;
-      data.aY = this.aY;
-      data.xRadius = this.xRadius;
-      data.yRadius = this.yRadius;
-      data.aStartAngle = this.aStartAngle;
-      data.aEndAngle = this.aEndAngle;
-      data.aClockwise = this.aClockwise;
-      data.aRotation = this.aRotation;
-      return data;
-    }
-    fromJSON(json) {
-      super.fromJSON(json);
-      this.aX = json.aX;
-      this.aY = json.aY;
-      this.xRadius = json.xRadius;
-      this.yRadius = json.yRadius;
-      this.aStartAngle = json.aStartAngle;
-      this.aEndAngle = json.aEndAngle;
-      this.aClockwise = json.aClockwise;
-      this.aRotation = json.aRotation;
-      return this;
-    }
-  };
-  var ArcCurve = class extends EllipseCurve {
-    constructor(aX, aY, aRadius, aStartAngle, aEndAngle, aClockwise) {
-      super(aX, aY, aRadius, aRadius, aStartAngle, aEndAngle, aClockwise);
-      this.isArcCurve = true;
-      this.type = "ArcCurve";
-    }
-  };
-  function CubicPoly() {
-    let c0 = 0, c1 = 0, c2 = 0, c3 = 0;
-    function init(x0, x1, t0, t1) {
-      c0 = x0;
-      c1 = t0;
-      c2 = -3 * x0 + 3 * x1 - 2 * t0 - t1;
-      c3 = 2 * x0 - 2 * x1 + t0 + t1;
-    }
-    return {
-      initCatmullRom: function(x0, x1, x2, x3, tension) {
-        init(x1, x2, tension * (x2 - x0), tension * (x3 - x1));
-      },
-      initNonuniformCatmullRom: function(x0, x1, x2, x3, dt0, dt1, dt2) {
-        let t1 = (x1 - x0) / dt0 - (x2 - x0) / (dt0 + dt1) + (x2 - x1) / dt1;
-        let t2 = (x2 - x1) / dt1 - (x3 - x1) / (dt1 + dt2) + (x3 - x2) / dt2;
-        t1 *= dt1;
-        t2 *= dt1;
-        init(x1, x2, t1, t2);
-      },
-      calc: function(t) {
-        const t2 = t * t;
-        const t3 = t2 * t;
-        return c0 + c1 * t + c2 * t2 + c3 * t3;
-      }
-    };
-  }
-  var tmp = /* @__PURE__ */ new Vector3();
-  var px = /* @__PURE__ */ new CubicPoly();
-  var py = /* @__PURE__ */ new CubicPoly();
-  var pz = /* @__PURE__ */ new CubicPoly();
-  var CatmullRomCurve3 = class extends Curve {
-    constructor(points = [], closed = false, curveType = "centripetal", tension = 0.5) {
-      super();
-      this.isCatmullRomCurve3 = true;
-      this.type = "CatmullRomCurve3";
-      this.points = points;
-      this.closed = closed;
-      this.curveType = curveType;
-      this.tension = tension;
-    }
-    getPoint(t, optionalTarget = new Vector3()) {
-      const point = optionalTarget;
-      const points = this.points;
-      const l = points.length;
-      const p = (l - (this.closed ? 0 : 1)) * t;
-      let intPoint = Math.floor(p);
-      let weight = p - intPoint;
-      if (this.closed) {
-        intPoint += intPoint > 0 ? 0 : (Math.floor(Math.abs(intPoint) / l) + 1) * l;
-      } else if (weight === 0 && intPoint === l - 1) {
-        intPoint = l - 2;
-        weight = 1;
-      }
-      let p0, p3;
-      if (this.closed || intPoint > 0) {
-        p0 = points[(intPoint - 1) % l];
-      } else {
-        tmp.subVectors(points[0], points[1]).add(points[0]);
-        p0 = tmp;
-      }
-      const p1 = points[intPoint % l];
-      const p2 = points[(intPoint + 1) % l];
-      if (this.closed || intPoint + 2 < l) {
-        p3 = points[(intPoint + 2) % l];
-      } else {
-        tmp.subVectors(points[l - 1], points[l - 2]).add(points[l - 1]);
-        p3 = tmp;
-      }
-      if (this.curveType === "centripetal" || this.curveType === "chordal") {
-        const pow = this.curveType === "chordal" ? 0.5 : 0.25;
-        let dt0 = Math.pow(p0.distanceToSquared(p1), pow);
-        let dt1 = Math.pow(p1.distanceToSquared(p2), pow);
-        let dt2 = Math.pow(p2.distanceToSquared(p3), pow);
-        if (dt1 < 1e-4) dt1 = 1;
-        if (dt0 < 1e-4) dt0 = dt1;
-        if (dt2 < 1e-4) dt2 = dt1;
-        px.initNonuniformCatmullRom(p0.x, p1.x, p2.x, p3.x, dt0, dt1, dt2);
-        py.initNonuniformCatmullRom(p0.y, p1.y, p2.y, p3.y, dt0, dt1, dt2);
-        pz.initNonuniformCatmullRom(p0.z, p1.z, p2.z, p3.z, dt0, dt1, dt2);
-      } else if (this.curveType === "catmullrom") {
-        px.initCatmullRom(p0.x, p1.x, p2.x, p3.x, this.tension);
-        py.initCatmullRom(p0.y, p1.y, p2.y, p3.y, this.tension);
-        pz.initCatmullRom(p0.z, p1.z, p2.z, p3.z, this.tension);
-      }
-      point.set(
-        px.calc(weight),
-        py.calc(weight),
-        pz.calc(weight)
-      );
-      return point;
-    }
-    copy(source) {
-      super.copy(source);
-      this.points = [];
-      for (let i = 0, l = source.points.length; i < l; i++) {
-        const point = source.points[i];
-        this.points.push(point.clone());
-      }
-      this.closed = source.closed;
-      this.curveType = source.curveType;
-      this.tension = source.tension;
-      return this;
-    }
-    toJSON() {
-      const data = super.toJSON();
-      data.points = [];
-      for (let i = 0, l = this.points.length; i < l; i++) {
-        const point = this.points[i];
-        data.points.push(point.toArray());
-      }
-      data.closed = this.closed;
-      data.curveType = this.curveType;
-      data.tension = this.tension;
-      return data;
-    }
-    fromJSON(json) {
-      super.fromJSON(json);
-      this.points = [];
-      for (let i = 0, l = json.points.length; i < l; i++) {
-        const point = json.points[i];
-        this.points.push(new Vector3().fromArray(point));
-      }
-      this.closed = json.closed;
-      this.curveType = json.curveType;
-      this.tension = json.tension;
-      return this;
-    }
-  };
-  function CatmullRom(t, p0, p1, p2, p3) {
-    const v0 = (p2 - p0) * 0.5;
-    const v1 = (p3 - p1) * 0.5;
-    const t2 = t * t;
-    const t3 = t * t2;
-    return (2 * p1 - 2 * p2 + v0 + v1) * t3 + (-3 * p1 + 3 * p2 - 2 * v0 - v1) * t2 + v0 * t + p1;
-  }
-  function QuadraticBezierP0(t, p) {
-    const k = 1 - t;
-    return k * k * p;
-  }
-  function QuadraticBezierP1(t, p) {
-    return 2 * (1 - t) * t * p;
-  }
-  function QuadraticBezierP2(t, p) {
-    return t * t * p;
-  }
-  function QuadraticBezier(t, p0, p1, p2) {
-    return QuadraticBezierP0(t, p0) + QuadraticBezierP1(t, p1) + QuadraticBezierP2(t, p2);
-  }
-  function CubicBezierP0(t, p) {
-    const k = 1 - t;
-    return k * k * k * p;
-  }
-  function CubicBezierP1(t, p) {
-    const k = 1 - t;
-    return 3 * k * k * t * p;
-  }
-  function CubicBezierP2(t, p) {
-    return 3 * (1 - t) * t * t * p;
-  }
-  function CubicBezierP3(t, p) {
-    return t * t * t * p;
-  }
-  function CubicBezier(t, p0, p1, p2, p3) {
-    return CubicBezierP0(t, p0) + CubicBezierP1(t, p1) + CubicBezierP2(t, p2) + CubicBezierP3(t, p3);
-  }
-  var CubicBezierCurve = class extends Curve {
-    constructor(v0 = new Vector2(), v1 = new Vector2(), v2 = new Vector2(), v3 = new Vector2()) {
-      super();
-      this.isCubicBezierCurve = true;
-      this.type = "CubicBezierCurve";
-      this.v0 = v0;
-      this.v1 = v1;
-      this.v2 = v2;
-      this.v3 = v3;
-    }
-    getPoint(t, optionalTarget = new Vector2()) {
-      const point = optionalTarget;
-      const v0 = this.v0, v1 = this.v1, v2 = this.v2, v3 = this.v3;
-      point.set(
-        CubicBezier(t, v0.x, v1.x, v2.x, v3.x),
-        CubicBezier(t, v0.y, v1.y, v2.y, v3.y)
-      );
-      return point;
-    }
-    copy(source) {
-      super.copy(source);
-      this.v0.copy(source.v0);
-      this.v1.copy(source.v1);
-      this.v2.copy(source.v2);
-      this.v3.copy(source.v3);
-      return this;
-    }
-    toJSON() {
-      const data = super.toJSON();
-      data.v0 = this.v0.toArray();
-      data.v1 = this.v1.toArray();
-      data.v2 = this.v2.toArray();
-      data.v3 = this.v3.toArray();
-      return data;
-    }
-    fromJSON(json) {
-      super.fromJSON(json);
-      this.v0.fromArray(json.v0);
-      this.v1.fromArray(json.v1);
-      this.v2.fromArray(json.v2);
-      this.v3.fromArray(json.v3);
-      return this;
-    }
-  };
-  var CubicBezierCurve3 = class extends Curve {
-    constructor(v0 = new Vector3(), v1 = new Vector3(), v2 = new Vector3(), v3 = new Vector3()) {
-      super();
-      this.isCubicBezierCurve3 = true;
-      this.type = "CubicBezierCurve3";
-      this.v0 = v0;
-      this.v1 = v1;
-      this.v2 = v2;
-      this.v3 = v3;
-    }
-    getPoint(t, optionalTarget = new Vector3()) {
-      const point = optionalTarget;
-      const v0 = this.v0, v1 = this.v1, v2 = this.v2, v3 = this.v3;
-      point.set(
-        CubicBezier(t, v0.x, v1.x, v2.x, v3.x),
-        CubicBezier(t, v0.y, v1.y, v2.y, v3.y),
-        CubicBezier(t, v0.z, v1.z, v2.z, v3.z)
-      );
-      return point;
-    }
-    copy(source) {
-      super.copy(source);
-      this.v0.copy(source.v0);
-      this.v1.copy(source.v1);
-      this.v2.copy(source.v2);
-      this.v3.copy(source.v3);
-      return this;
-    }
-    toJSON() {
-      const data = super.toJSON();
-      data.v0 = this.v0.toArray();
-      data.v1 = this.v1.toArray();
-      data.v2 = this.v2.toArray();
-      data.v3 = this.v3.toArray();
-      return data;
-    }
-    fromJSON(json) {
-      super.fromJSON(json);
-      this.v0.fromArray(json.v0);
-      this.v1.fromArray(json.v1);
-      this.v2.fromArray(json.v2);
-      this.v3.fromArray(json.v3);
-      return this;
-    }
-  };
-  var LineCurve = class extends Curve {
-    constructor(v1 = new Vector2(), v2 = new Vector2()) {
-      super();
-      this.isLineCurve = true;
-      this.type = "LineCurve";
-      this.v1 = v1;
-      this.v2 = v2;
-    }
-    getPoint(t, optionalTarget = new Vector2()) {
-      const point = optionalTarget;
-      if (t === 1) {
-        point.copy(this.v2);
-      } else {
-        point.copy(this.v2).sub(this.v1);
-        point.multiplyScalar(t).add(this.v1);
-      }
-      return point;
-    }
-    // Line curve is linear, so we can overwrite default getPointAt
-    getPointAt(u, optionalTarget) {
-      return this.getPoint(u, optionalTarget);
-    }
-    getTangent(t, optionalTarget = new Vector2()) {
-      return optionalTarget.subVectors(this.v2, this.v1).normalize();
-    }
-    getTangentAt(u, optionalTarget) {
-      return this.getTangent(u, optionalTarget);
-    }
-    copy(source) {
-      super.copy(source);
-      this.v1.copy(source.v1);
-      this.v2.copy(source.v2);
-      return this;
-    }
-    toJSON() {
-      const data = super.toJSON();
-      data.v1 = this.v1.toArray();
-      data.v2 = this.v2.toArray();
-      return data;
-    }
-    fromJSON(json) {
-      super.fromJSON(json);
-      this.v1.fromArray(json.v1);
-      this.v2.fromArray(json.v2);
-      return this;
-    }
-  };
-  var LineCurve3 = class extends Curve {
-    constructor(v1 = new Vector3(), v2 = new Vector3()) {
-      super();
-      this.isLineCurve3 = true;
-      this.type = "LineCurve3";
-      this.v1 = v1;
-      this.v2 = v2;
-    }
-    getPoint(t, optionalTarget = new Vector3()) {
-      const point = optionalTarget;
-      if (t === 1) {
-        point.copy(this.v2);
-      } else {
-        point.copy(this.v2).sub(this.v1);
-        point.multiplyScalar(t).add(this.v1);
-      }
-      return point;
-    }
-    // Line curve is linear, so we can overwrite default getPointAt
-    getPointAt(u, optionalTarget) {
-      return this.getPoint(u, optionalTarget);
-    }
-    getTangent(t, optionalTarget = new Vector3()) {
-      return optionalTarget.subVectors(this.v2, this.v1).normalize();
-    }
-    getTangentAt(u, optionalTarget) {
-      return this.getTangent(u, optionalTarget);
-    }
-    copy(source) {
-      super.copy(source);
-      this.v1.copy(source.v1);
-      this.v2.copy(source.v2);
-      return this;
-    }
-    toJSON() {
-      const data = super.toJSON();
-      data.v1 = this.v1.toArray();
-      data.v2 = this.v2.toArray();
-      return data;
-    }
-    fromJSON(json) {
-      super.fromJSON(json);
-      this.v1.fromArray(json.v1);
-      this.v2.fromArray(json.v2);
-      return this;
-    }
-  };
-  var QuadraticBezierCurve = class extends Curve {
-    constructor(v0 = new Vector2(), v1 = new Vector2(), v2 = new Vector2()) {
-      super();
-      this.isQuadraticBezierCurve = true;
-      this.type = "QuadraticBezierCurve";
-      this.v0 = v0;
-      this.v1 = v1;
-      this.v2 = v2;
-    }
-    getPoint(t, optionalTarget = new Vector2()) {
-      const point = optionalTarget;
-      const v0 = this.v0, v1 = this.v1, v2 = this.v2;
-      point.set(
-        QuadraticBezier(t, v0.x, v1.x, v2.x),
-        QuadraticBezier(t, v0.y, v1.y, v2.y)
-      );
-      return point;
-    }
-    copy(source) {
-      super.copy(source);
-      this.v0.copy(source.v0);
-      this.v1.copy(source.v1);
-      this.v2.copy(source.v2);
-      return this;
-    }
-    toJSON() {
-      const data = super.toJSON();
-      data.v0 = this.v0.toArray();
-      data.v1 = this.v1.toArray();
-      data.v2 = this.v2.toArray();
-      return data;
-    }
-    fromJSON(json) {
-      super.fromJSON(json);
-      this.v0.fromArray(json.v0);
-      this.v1.fromArray(json.v1);
-      this.v2.fromArray(json.v2);
-      return this;
-    }
-  };
-  var QuadraticBezierCurve3 = class extends Curve {
-    constructor(v0 = new Vector3(), v1 = new Vector3(), v2 = new Vector3()) {
-      super();
-      this.isQuadraticBezierCurve3 = true;
-      this.type = "QuadraticBezierCurve3";
-      this.v0 = v0;
-      this.v1 = v1;
-      this.v2 = v2;
-    }
-    getPoint(t, optionalTarget = new Vector3()) {
-      const point = optionalTarget;
-      const v0 = this.v0, v1 = this.v1, v2 = this.v2;
-      point.set(
-        QuadraticBezier(t, v0.x, v1.x, v2.x),
-        QuadraticBezier(t, v0.y, v1.y, v2.y),
-        QuadraticBezier(t, v0.z, v1.z, v2.z)
-      );
-      return point;
-    }
-    copy(source) {
-      super.copy(source);
-      this.v0.copy(source.v0);
-      this.v1.copy(source.v1);
-      this.v2.copy(source.v2);
-      return this;
-    }
-    toJSON() {
-      const data = super.toJSON();
-      data.v0 = this.v0.toArray();
-      data.v1 = this.v1.toArray();
-      data.v2 = this.v2.toArray();
-      return data;
-    }
-    fromJSON(json) {
-      super.fromJSON(json);
-      this.v0.fromArray(json.v0);
-      this.v1.fromArray(json.v1);
-      this.v2.fromArray(json.v2);
-      return this;
-    }
-  };
-  var SplineCurve = class extends Curve {
-    constructor(points = []) {
-      super();
-      this.isSplineCurve = true;
-      this.type = "SplineCurve";
-      this.points = points;
-    }
-    getPoint(t, optionalTarget = new Vector2()) {
-      const point = optionalTarget;
-      const points = this.points;
-      const p = (points.length - 1) * t;
-      const intPoint = Math.floor(p);
-      const weight = p - intPoint;
-      const p0 = points[intPoint === 0 ? intPoint : intPoint - 1];
-      const p1 = points[intPoint];
-      const p2 = points[intPoint > points.length - 2 ? points.length - 1 : intPoint + 1];
-      const p3 = points[intPoint > points.length - 3 ? points.length - 1 : intPoint + 2];
-      point.set(
-        CatmullRom(weight, p0.x, p1.x, p2.x, p3.x),
-        CatmullRom(weight, p0.y, p1.y, p2.y, p3.y)
-      );
-      return point;
-    }
-    copy(source) {
-      super.copy(source);
-      this.points = [];
-      for (let i = 0, l = source.points.length; i < l; i++) {
-        const point = source.points[i];
-        this.points.push(point.clone());
-      }
-      return this;
-    }
-    toJSON() {
-      const data = super.toJSON();
-      data.points = [];
-      for (let i = 0, l = this.points.length; i < l; i++) {
-        const point = this.points[i];
-        data.points.push(point.toArray());
-      }
-      return data;
-    }
-    fromJSON(json) {
-      super.fromJSON(json);
-      this.points = [];
-      for (let i = 0, l = json.points.length; i < l; i++) {
-        const point = json.points[i];
-        this.points.push(new Vector2().fromArray(point));
-      }
-      return this;
-    }
-  };
-  var Curves = /* @__PURE__ */ Object.freeze({
-    __proto__: null,
-    ArcCurve,
-    CatmullRomCurve3,
-    CubicBezierCurve,
-    CubicBezierCurve3,
-    EllipseCurve,
-    LineCurve,
-    LineCurve3,
-    QuadraticBezierCurve,
-    QuadraticBezierCurve3,
-    SplineCurve
-  });
-  var CurvePath = class extends Curve {
-    constructor() {
-      super();
-      this.type = "CurvePath";
-      this.curves = [];
-      this.autoClose = false;
-    }
-    add(curve) {
-      this.curves.push(curve);
-    }
-    closePath() {
-      const startPoint = this.curves[0].getPoint(0);
-      const endPoint = this.curves[this.curves.length - 1].getPoint(1);
-      if (!startPoint.equals(endPoint)) {
-        const lineType = startPoint.isVector2 === true ? "LineCurve" : "LineCurve3";
-        this.curves.push(new Curves[lineType](endPoint, startPoint));
-      }
-      return this;
-    }
-    // To get accurate point with reference to
-    // entire path distance at time t,
-    // following has to be done:
-    // 1. Length of each sub path have to be known
-    // 2. Locate and identify type of curve
-    // 3. Get t for the curve
-    // 4. Return curve.getPointAt(t')
-    getPoint(t, optionalTarget) {
-      const d = t * this.getLength();
-      const curveLengths = this.getCurveLengths();
-      let i = 0;
-      while (i < curveLengths.length) {
-        if (curveLengths[i] >= d) {
-          const diff = curveLengths[i] - d;
-          const curve = this.curves[i];
-          const segmentLength = curve.getLength();
-          const u = segmentLength === 0 ? 0 : 1 - diff / segmentLength;
-          return curve.getPointAt(u, optionalTarget);
-        }
-        i++;
-      }
-      return null;
-    }
-    // We cannot use the default THREE.Curve getPoint() with getLength() because in
-    // THREE.Curve, getLength() depends on getPoint() but in THREE.CurvePath
-    // getPoint() depends on getLength
-    getLength() {
-      const lens = this.getCurveLengths();
-      return lens[lens.length - 1];
-    }
-    // cacheLengths must be recalculated.
-    updateArcLengths() {
-      this.needsUpdate = true;
-      this.cacheLengths = null;
-      this.getCurveLengths();
-    }
-    // Compute lengths and cache them
-    // We cannot overwrite getLengths() because UtoT mapping uses it.
-    getCurveLengths() {
-      if (this.cacheLengths && this.cacheLengths.length === this.curves.length) {
-        return this.cacheLengths;
-      }
-      const lengths = [];
-      let sums = 0;
-      for (let i = 0, l = this.curves.length; i < l; i++) {
-        sums += this.curves[i].getLength();
-        lengths.push(sums);
-      }
-      this.cacheLengths = lengths;
-      return lengths;
-    }
-    getSpacedPoints(divisions = 40) {
-      const points = [];
-      for (let i = 0; i <= divisions; i++) {
-        points.push(this.getPoint(i / divisions));
-      }
-      if (this.autoClose) {
-        points.push(points[0]);
-      }
-      return points;
-    }
-    getPoints(divisions = 12) {
-      const points = [];
-      let last;
-      for (let i = 0, curves = this.curves; i < curves.length; i++) {
-        const curve = curves[i];
-        const resolution = curve.isEllipseCurve ? divisions * 2 : curve.isLineCurve || curve.isLineCurve3 ? 1 : curve.isSplineCurve ? divisions * curve.points.length : divisions;
-        const pts = curve.getPoints(resolution);
-        for (let j = 0; j < pts.length; j++) {
-          const point = pts[j];
-          if (last && last.equals(point)) continue;
-          points.push(point);
-          last = point;
-        }
-      }
-      if (this.autoClose && points.length > 1 && !points[points.length - 1].equals(points[0])) {
-        points.push(points[0]);
-      }
-      return points;
-    }
-    copy(source) {
-      super.copy(source);
-      this.curves = [];
-      for (let i = 0, l = source.curves.length; i < l; i++) {
-        const curve = source.curves[i];
-        this.curves.push(curve.clone());
-      }
-      this.autoClose = source.autoClose;
-      return this;
-    }
-    toJSON() {
-      const data = super.toJSON();
-      data.autoClose = this.autoClose;
-      data.curves = [];
-      for (let i = 0, l = this.curves.length; i < l; i++) {
-        const curve = this.curves[i];
-        data.curves.push(curve.toJSON());
-      }
-      return data;
-    }
-    fromJSON(json) {
-      super.fromJSON(json);
-      this.autoClose = json.autoClose;
-      this.curves = [];
-      for (let i = 0, l = json.curves.length; i < l; i++) {
-        const curve = json.curves[i];
-        this.curves.push(new Curves[curve.type]().fromJSON(curve));
-      }
-      return this;
-    }
-  };
-  var Path = class extends CurvePath {
-    constructor(points) {
-      super();
-      this.type = "Path";
-      this.currentPoint = new Vector2();
-      if (points) {
-        this.setFromPoints(points);
-      }
-    }
-    setFromPoints(points) {
-      this.moveTo(points[0].x, points[0].y);
-      for (let i = 1, l = points.length; i < l; i++) {
-        this.lineTo(points[i].x, points[i].y);
-      }
-      return this;
-    }
-    moveTo(x, y) {
-      this.currentPoint.set(x, y);
-      return this;
-    }
-    lineTo(x, y) {
-      const curve = new LineCurve(this.currentPoint.clone(), new Vector2(x, y));
-      this.curves.push(curve);
-      this.currentPoint.set(x, y);
-      return this;
-    }
-    quadraticCurveTo(aCPx, aCPy, aX, aY) {
-      const curve = new QuadraticBezierCurve(
-        this.currentPoint.clone(),
-        new Vector2(aCPx, aCPy),
-        new Vector2(aX, aY)
-      );
-      this.curves.push(curve);
-      this.currentPoint.set(aX, aY);
-      return this;
-    }
-    bezierCurveTo(aCP1x, aCP1y, aCP2x, aCP2y, aX, aY) {
-      const curve = new CubicBezierCurve(
-        this.currentPoint.clone(),
-        new Vector2(aCP1x, aCP1y),
-        new Vector2(aCP2x, aCP2y),
-        new Vector2(aX, aY)
-      );
-      this.curves.push(curve);
-      this.currentPoint.set(aX, aY);
-      return this;
-    }
-    splineThru(pts) {
-      const npts = [this.currentPoint.clone()].concat(pts);
-      const curve = new SplineCurve(npts);
-      this.curves.push(curve);
-      this.currentPoint.copy(pts[pts.length - 1]);
-      return this;
-    }
-    arc(aX, aY, aRadius, aStartAngle, aEndAngle, aClockwise) {
-      const x0 = this.currentPoint.x;
-      const y0 = this.currentPoint.y;
-      this.absarc(
-        aX + x0,
-        aY + y0,
-        aRadius,
-        aStartAngle,
-        aEndAngle,
-        aClockwise
-      );
-      return this;
-    }
-    absarc(aX, aY, aRadius, aStartAngle, aEndAngle, aClockwise) {
-      this.absellipse(aX, aY, aRadius, aRadius, aStartAngle, aEndAngle, aClockwise);
-      return this;
-    }
-    ellipse(aX, aY, xRadius, yRadius, aStartAngle, aEndAngle, aClockwise, aRotation) {
-      const x0 = this.currentPoint.x;
-      const y0 = this.currentPoint.y;
-      this.absellipse(aX + x0, aY + y0, xRadius, yRadius, aStartAngle, aEndAngle, aClockwise, aRotation);
-      return this;
-    }
-    absellipse(aX, aY, xRadius, yRadius, aStartAngle, aEndAngle, aClockwise, aRotation) {
-      const curve = new EllipseCurve(aX, aY, xRadius, yRadius, aStartAngle, aEndAngle, aClockwise, aRotation);
-      if (this.curves.length > 0) {
-        const firstPoint = curve.getPoint(0);
-        if (!firstPoint.equals(this.currentPoint)) {
-          this.lineTo(firstPoint.x, firstPoint.y);
-        }
-      }
-      this.curves.push(curve);
-      const lastPoint = curve.getPoint(1);
-      this.currentPoint.copy(lastPoint);
-      return this;
-    }
-    copy(source) {
-      super.copy(source);
-      this.currentPoint.copy(source.currentPoint);
-      return this;
-    }
-    toJSON() {
-      const data = super.toJSON();
-      data.currentPoint = this.currentPoint.toArray();
-      return data;
-    }
-    fromJSON(json) {
-      super.fromJSON(json);
-      this.currentPoint.fromArray(json.currentPoint);
-      return this;
-    }
-  };
-  var LatheGeometry = class _LatheGeometry extends BufferGeometry {
-    constructor(points = [new Vector2(0, -0.5), new Vector2(0.5, 0), new Vector2(0, 0.5)], segments = 12, phiStart = 0, phiLength = Math.PI * 2) {
-      super();
-      this.type = "LatheGeometry";
-      this.parameters = {
-        points,
-        segments,
-        phiStart,
-        phiLength
-      };
-      segments = Math.floor(segments);
-      phiLength = clamp(phiLength, 0, Math.PI * 2);
-      const indices = [];
-      const vertices = [];
-      const uvs = [];
-      const initNormals = [];
-      const normals = [];
-      const inverseSegments = 1 / segments;
-      const vertex2 = new Vector3();
-      const uv = new Vector2();
-      const normal = new Vector3();
-      const curNormal = new Vector3();
-      const prevNormal = new Vector3();
-      let dx = 0;
-      let dy = 0;
-      for (let j = 0; j <= points.length - 1; j++) {
-        switch (j) {
-          case 0:
-            dx = points[j + 1].x - points[j].x;
-            dy = points[j + 1].y - points[j].y;
-            normal.x = dy * 1;
-            normal.y = -dx;
-            normal.z = dy * 0;
-            prevNormal.copy(normal);
-            normal.normalize();
-            initNormals.push(normal.x, normal.y, normal.z);
-            break;
-          case points.length - 1:
-            initNormals.push(prevNormal.x, prevNormal.y, prevNormal.z);
-            break;
-          default:
-            dx = points[j + 1].x - points[j].x;
-            dy = points[j + 1].y - points[j].y;
-            normal.x = dy * 1;
-            normal.y = -dx;
-            normal.z = dy * 0;
-            curNormal.copy(normal);
-            normal.x += prevNormal.x;
-            normal.y += prevNormal.y;
-            normal.z += prevNormal.z;
-            normal.normalize();
-            initNormals.push(normal.x, normal.y, normal.z);
-            prevNormal.copy(curNormal);
-        }
-      }
-      for (let i = 0; i <= segments; i++) {
-        const phi = phiStart + i * inverseSegments * phiLength;
-        const sin = Math.sin(phi);
-        const cos = Math.cos(phi);
-        for (let j = 0; j <= points.length - 1; j++) {
-          vertex2.x = points[j].x * sin;
-          vertex2.y = points[j].y;
-          vertex2.z = points[j].x * cos;
-          vertices.push(vertex2.x, vertex2.y, vertex2.z);
-          uv.x = i / segments;
-          uv.y = j / (points.length - 1);
-          uvs.push(uv.x, uv.y);
-          const x = initNormals[3 * j + 0] * sin;
-          const y = initNormals[3 * j + 1];
-          const z = initNormals[3 * j + 0] * cos;
-          normals.push(x, y, z);
-        }
-      }
-      for (let i = 0; i < segments; i++) {
-        for (let j = 0; j < points.length - 1; j++) {
-          const base = j + i * points.length;
-          const a = base;
-          const b = base + points.length;
-          const c = base + points.length + 1;
-          const d = base + 1;
-          indices.push(a, b, d);
-          indices.push(c, d, b);
-        }
-      }
-      this.setIndex(indices);
-      this.setAttribute("position", new Float32BufferAttribute(vertices, 3));
-      this.setAttribute("uv", new Float32BufferAttribute(uvs, 2));
-      this.setAttribute("normal", new Float32BufferAttribute(normals, 3));
-    }
-    copy(source) {
-      super.copy(source);
-      this.parameters = Object.assign({}, source.parameters);
-      return this;
-    }
-    static fromJSON(data) {
-      return new _LatheGeometry(data.points, data.segments, data.phiStart, data.phiLength);
-    }
-  };
-  var CapsuleGeometry = class _CapsuleGeometry extends LatheGeometry {
-    constructor(radius = 1, length = 1, capSegments = 4, radialSegments = 8) {
-      const path = new Path();
-      path.absarc(0, -length / 2, radius, Math.PI * 1.5, 0);
-      path.absarc(0, length / 2, radius, 0, Math.PI * 0.5);
-      super(path.getPoints(capSegments), radialSegments);
-      this.type = "CapsuleGeometry";
-      this.parameters = {
-        radius,
-        length,
-        capSegments,
-        radialSegments
-      };
-    }
-    static fromJSON(data) {
-      return new _CapsuleGeometry(data.radius, data.length, data.capSegments, data.radialSegments);
-    }
-  };
   var CircleGeometry = class _CircleGeometry extends BufferGeometry {
     constructor(radius = 1, segments = 32, thetaStart = 0, thetaLength = Math.PI * 2) {
       super();
@@ -21995,157 +20855,6 @@
   function now() {
     return (typeof performance === "undefined" ? Date : performance).now();
   }
-  var PropertyMixer = class {
-    constructor(binding, typeName, valueSize) {
-      this.binding = binding;
-      this.valueSize = valueSize;
-      let mixFunction, mixFunctionAdditive, setIdentity;
-      switch (typeName) {
-        case "quaternion":
-          mixFunction = this._slerp;
-          mixFunctionAdditive = this._slerpAdditive;
-          setIdentity = this._setAdditiveIdentityQuaternion;
-          this.buffer = new Float64Array(valueSize * 6);
-          this._workIndex = 5;
-          break;
-        case "string":
-        case "bool":
-          mixFunction = this._select;
-          mixFunctionAdditive = this._select;
-          setIdentity = this._setAdditiveIdentityOther;
-          this.buffer = new Array(valueSize * 5);
-          break;
-        default:
-          mixFunction = this._lerp;
-          mixFunctionAdditive = this._lerpAdditive;
-          setIdentity = this._setAdditiveIdentityNumeric;
-          this.buffer = new Float64Array(valueSize * 5);
-      }
-      this._mixBufferRegion = mixFunction;
-      this._mixBufferRegionAdditive = mixFunctionAdditive;
-      this._setIdentity = setIdentity;
-      this._origIndex = 3;
-      this._addIndex = 4;
-      this.cumulativeWeight = 0;
-      this.cumulativeWeightAdditive = 0;
-      this.useCount = 0;
-      this.referenceCount = 0;
-    }
-    // accumulate data in the 'incoming' region into 'accu<i>'
-    accumulate(accuIndex, weight) {
-      const buffer = this.buffer, stride = this.valueSize, offset = accuIndex * stride + stride;
-      let currentWeight = this.cumulativeWeight;
-      if (currentWeight === 0) {
-        for (let i = 0; i !== stride; ++i) {
-          buffer[offset + i] = buffer[i];
-        }
-        currentWeight = weight;
-      } else {
-        currentWeight += weight;
-        const mix = weight / currentWeight;
-        this._mixBufferRegion(buffer, offset, 0, mix, stride);
-      }
-      this.cumulativeWeight = currentWeight;
-    }
-    // accumulate data in the 'incoming' region into 'add'
-    accumulateAdditive(weight) {
-      const buffer = this.buffer, stride = this.valueSize, offset = stride * this._addIndex;
-      if (this.cumulativeWeightAdditive === 0) {
-        this._setIdentity();
-      }
-      this._mixBufferRegionAdditive(buffer, offset, 0, weight, stride);
-      this.cumulativeWeightAdditive += weight;
-    }
-    // apply the state of 'accu<i>' to the binding when accus differ
-    apply(accuIndex) {
-      const stride = this.valueSize, buffer = this.buffer, offset = accuIndex * stride + stride, weight = this.cumulativeWeight, weightAdditive = this.cumulativeWeightAdditive, binding = this.binding;
-      this.cumulativeWeight = 0;
-      this.cumulativeWeightAdditive = 0;
-      if (weight < 1) {
-        const originalValueOffset = stride * this._origIndex;
-        this._mixBufferRegion(
-          buffer,
-          offset,
-          originalValueOffset,
-          1 - weight,
-          stride
-        );
-      }
-      if (weightAdditive > 0) {
-        this._mixBufferRegionAdditive(buffer, offset, this._addIndex * stride, 1, stride);
-      }
-      for (let i = stride, e = stride + stride; i !== e; ++i) {
-        if (buffer[i] !== buffer[i + stride]) {
-          binding.setValue(buffer, offset);
-          break;
-        }
-      }
-    }
-    // remember the state of the bound property and copy it to both accus
-    saveOriginalState() {
-      const binding = this.binding;
-      const buffer = this.buffer, stride = this.valueSize, originalValueOffset = stride * this._origIndex;
-      binding.getValue(buffer, originalValueOffset);
-      for (let i = stride, e = originalValueOffset; i !== e; ++i) {
-        buffer[i] = buffer[originalValueOffset + i % stride];
-      }
-      this._setIdentity();
-      this.cumulativeWeight = 0;
-      this.cumulativeWeightAdditive = 0;
-    }
-    // apply the state previously taken via 'saveOriginalState' to the binding
-    restoreOriginalState() {
-      const originalValueOffset = this.valueSize * 3;
-      this.binding.setValue(this.buffer, originalValueOffset);
-    }
-    _setAdditiveIdentityNumeric() {
-      const startIndex = this._addIndex * this.valueSize;
-      const endIndex = startIndex + this.valueSize;
-      for (let i = startIndex; i < endIndex; i++) {
-        this.buffer[i] = 0;
-      }
-    }
-    _setAdditiveIdentityQuaternion() {
-      this._setAdditiveIdentityNumeric();
-      this.buffer[this._addIndex * this.valueSize + 3] = 1;
-    }
-    _setAdditiveIdentityOther() {
-      const startIndex = this._origIndex * this.valueSize;
-      const targetIndex = this._addIndex * this.valueSize;
-      for (let i = 0; i < this.valueSize; i++) {
-        this.buffer[targetIndex + i] = this.buffer[startIndex + i];
-      }
-    }
-    // mix functions
-    _select(buffer, dstOffset, srcOffset, t, stride) {
-      if (t >= 0.5) {
-        for (let i = 0; i !== stride; ++i) {
-          buffer[dstOffset + i] = buffer[srcOffset + i];
-        }
-      }
-    }
-    _slerp(buffer, dstOffset, srcOffset, t) {
-      Quaternion.slerpFlat(buffer, dstOffset, buffer, dstOffset, buffer, srcOffset, t);
-    }
-    _slerpAdditive(buffer, dstOffset, srcOffset, t, stride) {
-      const workOffset = this._workIndex * stride;
-      Quaternion.multiplyQuaternionsFlat(buffer, workOffset, buffer, dstOffset, buffer, srcOffset);
-      Quaternion.slerpFlat(buffer, dstOffset, buffer, dstOffset, buffer, workOffset, t);
-    }
-    _lerp(buffer, dstOffset, srcOffset, t, stride) {
-      const s = 1 - t;
-      for (let i = 0; i !== stride; ++i) {
-        const j = dstOffset + i;
-        buffer[j] = buffer[j] * s + buffer[srcOffset + i] * t;
-      }
-    }
-    _lerpAdditive(buffer, dstOffset, srcOffset, t, stride) {
-      for (let i = 0; i !== stride; ++i) {
-        const j = dstOffset + i;
-        buffer[j] = buffer[j] + buffer[srcOffset + i] * t;
-      }
-    }
-  };
   var _RESERVED_CHARS_RE = "\\[\\]\\.:\\/";
   var _reservedRe = new RegExp("[" + _RESERVED_CHARS_RE + "]", "g");
   var _wordChar = "[^" + _RESERVED_CHARS_RE + "]";
@@ -22523,727 +21232,7 @@
       PropertyBinding.prototype._setValue_fromArray_setMatrixWorldNeedsUpdate
     ]
   ];
-  var AnimationAction = class {
-    constructor(mixer2, clip, localRoot = null, blendMode = clip.blendMode) {
-      this._mixer = mixer2;
-      this._clip = clip;
-      this._localRoot = localRoot;
-      this.blendMode = blendMode;
-      const tracks = clip.tracks, nTracks = tracks.length, interpolants = new Array(nTracks);
-      const interpolantSettings = {
-        endingStart: ZeroCurvatureEnding,
-        endingEnd: ZeroCurvatureEnding
-      };
-      for (let i = 0; i !== nTracks; ++i) {
-        const interpolant = tracks[i].createInterpolant(null);
-        interpolants[i] = interpolant;
-        interpolant.settings = interpolantSettings;
-      }
-      this._interpolantSettings = interpolantSettings;
-      this._interpolants = interpolants;
-      this._propertyBindings = new Array(nTracks);
-      this._cacheIndex = null;
-      this._byClipCacheIndex = null;
-      this._timeScaleInterpolant = null;
-      this._weightInterpolant = null;
-      this.loop = LoopRepeat;
-      this._loopCount = -1;
-      this._startTime = null;
-      this.time = 0;
-      this.timeScale = 1;
-      this._effectiveTimeScale = 1;
-      this.weight = 1;
-      this._effectiveWeight = 1;
-      this.repetitions = Infinity;
-      this.paused = false;
-      this.enabled = true;
-      this.clampWhenFinished = false;
-      this.zeroSlopeAtStart = true;
-      this.zeroSlopeAtEnd = true;
-    }
-    // State & Scheduling
-    play() {
-      this._mixer._activateAction(this);
-      return this;
-    }
-    stop() {
-      this._mixer._deactivateAction(this);
-      return this.reset();
-    }
-    reset() {
-      this.paused = false;
-      this.enabled = true;
-      this.time = 0;
-      this._loopCount = -1;
-      this._startTime = null;
-      return this.stopFading().stopWarping();
-    }
-    isRunning() {
-      return this.enabled && !this.paused && this.timeScale !== 0 && this._startTime === null && this._mixer._isActiveAction(this);
-    }
-    // return true when play has been called
-    isScheduled() {
-      return this._mixer._isActiveAction(this);
-    }
-    startAt(time) {
-      this._startTime = time;
-      return this;
-    }
-    setLoop(mode, repetitions) {
-      this.loop = mode;
-      this.repetitions = repetitions;
-      return this;
-    }
-    // Weight
-    // set the weight stopping any scheduled fading
-    // although .enabled = false yields an effective weight of zero, this
-    // method does *not* change .enabled, because it would be confusing
-    setEffectiveWeight(weight) {
-      this.weight = weight;
-      this._effectiveWeight = this.enabled ? weight : 0;
-      return this.stopFading();
-    }
-    // return the weight considering fading and .enabled
-    getEffectiveWeight() {
-      return this._effectiveWeight;
-    }
-    fadeIn(duration) {
-      return this._scheduleFading(duration, 0, 1);
-    }
-    fadeOut(duration) {
-      return this._scheduleFading(duration, 1, 0);
-    }
-    crossFadeFrom(fadeOutAction, duration, warp) {
-      fadeOutAction.fadeOut(duration);
-      this.fadeIn(duration);
-      if (warp) {
-        const fadeInDuration = this._clip.duration, fadeOutDuration = fadeOutAction._clip.duration, startEndRatio = fadeOutDuration / fadeInDuration, endStartRatio = fadeInDuration / fadeOutDuration;
-        fadeOutAction.warp(1, startEndRatio, duration);
-        this.warp(endStartRatio, 1, duration);
-      }
-      return this;
-    }
-    crossFadeTo(fadeInAction, duration, warp) {
-      return fadeInAction.crossFadeFrom(this, duration, warp);
-    }
-    stopFading() {
-      const weightInterpolant = this._weightInterpolant;
-      if (weightInterpolant !== null) {
-        this._weightInterpolant = null;
-        this._mixer._takeBackControlInterpolant(weightInterpolant);
-      }
-      return this;
-    }
-    // Time Scale Control
-    // set the time scale stopping any scheduled warping
-    // although .paused = true yields an effective time scale of zero, this
-    // method does *not* change .paused, because it would be confusing
-    setEffectiveTimeScale(timeScale) {
-      this.timeScale = timeScale;
-      this._effectiveTimeScale = this.paused ? 0 : timeScale;
-      return this.stopWarping();
-    }
-    // return the time scale considering warping and .paused
-    getEffectiveTimeScale() {
-      return this._effectiveTimeScale;
-    }
-    setDuration(duration) {
-      this.timeScale = this._clip.duration / duration;
-      return this.stopWarping();
-    }
-    syncWith(action) {
-      this.time = action.time;
-      this.timeScale = action.timeScale;
-      return this.stopWarping();
-    }
-    halt(duration) {
-      return this.warp(this._effectiveTimeScale, 0, duration);
-    }
-    warp(startTimeScale, endTimeScale, duration) {
-      const mixer2 = this._mixer, now2 = mixer2.time, timeScale = this.timeScale;
-      let interpolant = this._timeScaleInterpolant;
-      if (interpolant === null) {
-        interpolant = mixer2._lendControlInterpolant();
-        this._timeScaleInterpolant = interpolant;
-      }
-      const times = interpolant.parameterPositions, values = interpolant.sampleValues;
-      times[0] = now2;
-      times[1] = now2 + duration;
-      values[0] = startTimeScale / timeScale;
-      values[1] = endTimeScale / timeScale;
-      return this;
-    }
-    stopWarping() {
-      const timeScaleInterpolant = this._timeScaleInterpolant;
-      if (timeScaleInterpolant !== null) {
-        this._timeScaleInterpolant = null;
-        this._mixer._takeBackControlInterpolant(timeScaleInterpolant);
-      }
-      return this;
-    }
-    // Object Accessors
-    getMixer() {
-      return this._mixer;
-    }
-    getClip() {
-      return this._clip;
-    }
-    getRoot() {
-      return this._localRoot || this._mixer._root;
-    }
-    // Interna
-    _update(time, deltaTime, timeDirection, accuIndex) {
-      if (!this.enabled) {
-        this._updateWeight(time);
-        return;
-      }
-      const startTime = this._startTime;
-      if (startTime !== null) {
-        const timeRunning = (time - startTime) * timeDirection;
-        if (timeRunning < 0 || timeDirection === 0) {
-          deltaTime = 0;
-        } else {
-          this._startTime = null;
-          deltaTime = timeDirection * timeRunning;
-        }
-      }
-      deltaTime *= this._updateTimeScale(time);
-      const clipTime = this._updateTime(deltaTime);
-      const weight = this._updateWeight(time);
-      if (weight > 0) {
-        const interpolants = this._interpolants;
-        const propertyMixers = this._propertyBindings;
-        switch (this.blendMode) {
-          case AdditiveAnimationBlendMode:
-            for (let j = 0, m = interpolants.length; j !== m; ++j) {
-              interpolants[j].evaluate(clipTime);
-              propertyMixers[j].accumulateAdditive(weight);
-            }
-            break;
-          case NormalAnimationBlendMode:
-          default:
-            for (let j = 0, m = interpolants.length; j !== m; ++j) {
-              interpolants[j].evaluate(clipTime);
-              propertyMixers[j].accumulate(accuIndex, weight);
-            }
-        }
-      }
-    }
-    _updateWeight(time) {
-      let weight = 0;
-      if (this.enabled) {
-        weight = this.weight;
-        const interpolant = this._weightInterpolant;
-        if (interpolant !== null) {
-          const interpolantValue = interpolant.evaluate(time)[0];
-          weight *= interpolantValue;
-          if (time > interpolant.parameterPositions[1]) {
-            this.stopFading();
-            if (interpolantValue === 0) {
-              this.enabled = false;
-            }
-          }
-        }
-      }
-      this._effectiveWeight = weight;
-      return weight;
-    }
-    _updateTimeScale(time) {
-      let timeScale = 0;
-      if (!this.paused) {
-        timeScale = this.timeScale;
-        const interpolant = this._timeScaleInterpolant;
-        if (interpolant !== null) {
-          const interpolantValue = interpolant.evaluate(time)[0];
-          timeScale *= interpolantValue;
-          if (time > interpolant.parameterPositions[1]) {
-            this.stopWarping();
-            if (timeScale === 0) {
-              this.paused = true;
-            } else {
-              this.timeScale = timeScale;
-            }
-          }
-        }
-      }
-      this._effectiveTimeScale = timeScale;
-      return timeScale;
-    }
-    _updateTime(deltaTime) {
-      const duration = this._clip.duration;
-      const loop = this.loop;
-      let time = this.time + deltaTime;
-      let loopCount = this._loopCount;
-      const pingPong = loop === LoopPingPong;
-      if (deltaTime === 0) {
-        if (loopCount === -1) return time;
-        return pingPong && (loopCount & 1) === 1 ? duration - time : time;
-      }
-      if (loop === LoopOnce) {
-        if (loopCount === -1) {
-          this._loopCount = 0;
-          this._setEndings(true, true, false);
-        }
-        handle_stop: {
-          if (time >= duration) {
-            time = duration;
-          } else if (time < 0) {
-            time = 0;
-          } else {
-            this.time = time;
-            break handle_stop;
-          }
-          if (this.clampWhenFinished) this.paused = true;
-          else this.enabled = false;
-          this.time = time;
-          this._mixer.dispatchEvent({
-            type: "finished",
-            action: this,
-            direction: deltaTime < 0 ? -1 : 1
-          });
-        }
-      } else {
-        if (loopCount === -1) {
-          if (deltaTime >= 0) {
-            loopCount = 0;
-            this._setEndings(true, this.repetitions === 0, pingPong);
-          } else {
-            this._setEndings(this.repetitions === 0, true, pingPong);
-          }
-        }
-        if (time >= duration || time < 0) {
-          const loopDelta = Math.floor(time / duration);
-          time -= duration * loopDelta;
-          loopCount += Math.abs(loopDelta);
-          const pending = this.repetitions - loopCount;
-          if (pending <= 0) {
-            if (this.clampWhenFinished) this.paused = true;
-            else this.enabled = false;
-            time = deltaTime > 0 ? duration : 0;
-            this.time = time;
-            this._mixer.dispatchEvent({
-              type: "finished",
-              action: this,
-              direction: deltaTime > 0 ? 1 : -1
-            });
-          } else {
-            if (pending === 1) {
-              const atStart = deltaTime < 0;
-              this._setEndings(atStart, !atStart, pingPong);
-            } else {
-              this._setEndings(false, false, pingPong);
-            }
-            this._loopCount = loopCount;
-            this.time = time;
-            this._mixer.dispatchEvent({
-              type: "loop",
-              action: this,
-              loopDelta
-            });
-          }
-        } else {
-          this.time = time;
-        }
-        if (pingPong && (loopCount & 1) === 1) {
-          return duration - time;
-        }
-      }
-      return time;
-    }
-    _setEndings(atStart, atEnd, pingPong) {
-      const settings = this._interpolantSettings;
-      if (pingPong) {
-        settings.endingStart = ZeroSlopeEnding;
-        settings.endingEnd = ZeroSlopeEnding;
-      } else {
-        if (atStart) {
-          settings.endingStart = this.zeroSlopeAtStart ? ZeroSlopeEnding : ZeroCurvatureEnding;
-        } else {
-          settings.endingStart = WrapAroundEnding;
-        }
-        if (atEnd) {
-          settings.endingEnd = this.zeroSlopeAtEnd ? ZeroSlopeEnding : ZeroCurvatureEnding;
-        } else {
-          settings.endingEnd = WrapAroundEnding;
-        }
-      }
-    }
-    _scheduleFading(duration, weightNow, weightThen) {
-      const mixer2 = this._mixer, now2 = mixer2.time;
-      let interpolant = this._weightInterpolant;
-      if (interpolant === null) {
-        interpolant = mixer2._lendControlInterpolant();
-        this._weightInterpolant = interpolant;
-      }
-      const times = interpolant.parameterPositions, values = interpolant.sampleValues;
-      times[0] = now2;
-      values[0] = weightNow;
-      times[1] = now2 + duration;
-      values[1] = weightThen;
-      return this;
-    }
-  };
   var _controlInterpolantsResultBuffer = new Float32Array(1);
-  var AnimationMixer = class extends EventDispatcher {
-    constructor(root) {
-      super();
-      this._root = root;
-      this._initMemoryManager();
-      this._accuIndex = 0;
-      this.time = 0;
-      this.timeScale = 1;
-    }
-    _bindAction(action, prototypeAction) {
-      const root = action._localRoot || this._root, tracks = action._clip.tracks, nTracks = tracks.length, bindings = action._propertyBindings, interpolants = action._interpolants, rootUuid = root.uuid, bindingsByRoot = this._bindingsByRootAndName;
-      let bindingsByName = bindingsByRoot[rootUuid];
-      if (bindingsByName === void 0) {
-        bindingsByName = {};
-        bindingsByRoot[rootUuid] = bindingsByName;
-      }
-      for (let i = 0; i !== nTracks; ++i) {
-        const track = tracks[i], trackName = track.name;
-        let binding = bindingsByName[trackName];
-        if (binding !== void 0) {
-          ++binding.referenceCount;
-          bindings[i] = binding;
-        } else {
-          binding = bindings[i];
-          if (binding !== void 0) {
-            if (binding._cacheIndex === null) {
-              ++binding.referenceCount;
-              this._addInactiveBinding(binding, rootUuid, trackName);
-            }
-            continue;
-          }
-          const path = prototypeAction && prototypeAction._propertyBindings[i].binding.parsedPath;
-          binding = new PropertyMixer(
-            PropertyBinding.create(root, trackName, path),
-            track.ValueTypeName,
-            track.getValueSize()
-          );
-          ++binding.referenceCount;
-          this._addInactiveBinding(binding, rootUuid, trackName);
-          bindings[i] = binding;
-        }
-        interpolants[i].resultBuffer = binding.buffer;
-      }
-    }
-    _activateAction(action) {
-      if (!this._isActiveAction(action)) {
-        if (action._cacheIndex === null) {
-          const rootUuid = (action._localRoot || this._root).uuid, clipUuid = action._clip.uuid, actionsForClip = this._actionsByClip[clipUuid];
-          this._bindAction(
-            action,
-            actionsForClip && actionsForClip.knownActions[0]
-          );
-          this._addInactiveAction(action, clipUuid, rootUuid);
-        }
-        const bindings = action._propertyBindings;
-        for (let i = 0, n = bindings.length; i !== n; ++i) {
-          const binding = bindings[i];
-          if (binding.useCount++ === 0) {
-            this._lendBinding(binding);
-            binding.saveOriginalState();
-          }
-        }
-        this._lendAction(action);
-      }
-    }
-    _deactivateAction(action) {
-      if (this._isActiveAction(action)) {
-        const bindings = action._propertyBindings;
-        for (let i = 0, n = bindings.length; i !== n; ++i) {
-          const binding = bindings[i];
-          if (--binding.useCount === 0) {
-            binding.restoreOriginalState();
-            this._takeBackBinding(binding);
-          }
-        }
-        this._takeBackAction(action);
-      }
-    }
-    // Memory manager
-    _initMemoryManager() {
-      this._actions = [];
-      this._nActiveActions = 0;
-      this._actionsByClip = {};
-      this._bindings = [];
-      this._nActiveBindings = 0;
-      this._bindingsByRootAndName = {};
-      this._controlInterpolants = [];
-      this._nActiveControlInterpolants = 0;
-      const scope = this;
-      this.stats = {
-        actions: {
-          get total() {
-            return scope._actions.length;
-          },
-          get inUse() {
-            return scope._nActiveActions;
-          }
-        },
-        bindings: {
-          get total() {
-            return scope._bindings.length;
-          },
-          get inUse() {
-            return scope._nActiveBindings;
-          }
-        },
-        controlInterpolants: {
-          get total() {
-            return scope._controlInterpolants.length;
-          },
-          get inUse() {
-            return scope._nActiveControlInterpolants;
-          }
-        }
-      };
-    }
-    // Memory management for AnimationAction objects
-    _isActiveAction(action) {
-      const index = action._cacheIndex;
-      return index !== null && index < this._nActiveActions;
-    }
-    _addInactiveAction(action, clipUuid, rootUuid) {
-      const actions = this._actions, actionsByClip = this._actionsByClip;
-      let actionsForClip = actionsByClip[clipUuid];
-      if (actionsForClip === void 0) {
-        actionsForClip = {
-          knownActions: [action],
-          actionByRoot: {}
-        };
-        action._byClipCacheIndex = 0;
-        actionsByClip[clipUuid] = actionsForClip;
-      } else {
-        const knownActions = actionsForClip.knownActions;
-        action._byClipCacheIndex = knownActions.length;
-        knownActions.push(action);
-      }
-      action._cacheIndex = actions.length;
-      actions.push(action);
-      actionsForClip.actionByRoot[rootUuid] = action;
-    }
-    _removeInactiveAction(action) {
-      const actions = this._actions, lastInactiveAction = actions[actions.length - 1], cacheIndex = action._cacheIndex;
-      lastInactiveAction._cacheIndex = cacheIndex;
-      actions[cacheIndex] = lastInactiveAction;
-      actions.pop();
-      action._cacheIndex = null;
-      const clipUuid = action._clip.uuid, actionsByClip = this._actionsByClip, actionsForClip = actionsByClip[clipUuid], knownActionsForClip = actionsForClip.knownActions, lastKnownAction = knownActionsForClip[knownActionsForClip.length - 1], byClipCacheIndex = action._byClipCacheIndex;
-      lastKnownAction._byClipCacheIndex = byClipCacheIndex;
-      knownActionsForClip[byClipCacheIndex] = lastKnownAction;
-      knownActionsForClip.pop();
-      action._byClipCacheIndex = null;
-      const actionByRoot = actionsForClip.actionByRoot, rootUuid = (action._localRoot || this._root).uuid;
-      delete actionByRoot[rootUuid];
-      if (knownActionsForClip.length === 0) {
-        delete actionsByClip[clipUuid];
-      }
-      this._removeInactiveBindingsForAction(action);
-    }
-    _removeInactiveBindingsForAction(action) {
-      const bindings = action._propertyBindings;
-      for (let i = 0, n = bindings.length; i !== n; ++i) {
-        const binding = bindings[i];
-        if (--binding.referenceCount === 0) {
-          this._removeInactiveBinding(binding);
-        }
-      }
-    }
-    _lendAction(action) {
-      const actions = this._actions, prevIndex = action._cacheIndex, lastActiveIndex = this._nActiveActions++, firstInactiveAction = actions[lastActiveIndex];
-      action._cacheIndex = lastActiveIndex;
-      actions[lastActiveIndex] = action;
-      firstInactiveAction._cacheIndex = prevIndex;
-      actions[prevIndex] = firstInactiveAction;
-    }
-    _takeBackAction(action) {
-      const actions = this._actions, prevIndex = action._cacheIndex, firstInactiveIndex = --this._nActiveActions, lastActiveAction = actions[firstInactiveIndex];
-      action._cacheIndex = firstInactiveIndex;
-      actions[firstInactiveIndex] = action;
-      lastActiveAction._cacheIndex = prevIndex;
-      actions[prevIndex] = lastActiveAction;
-    }
-    // Memory management for PropertyMixer objects
-    _addInactiveBinding(binding, rootUuid, trackName) {
-      const bindingsByRoot = this._bindingsByRootAndName, bindings = this._bindings;
-      let bindingByName = bindingsByRoot[rootUuid];
-      if (bindingByName === void 0) {
-        bindingByName = {};
-        bindingsByRoot[rootUuid] = bindingByName;
-      }
-      bindingByName[trackName] = binding;
-      binding._cacheIndex = bindings.length;
-      bindings.push(binding);
-    }
-    _removeInactiveBinding(binding) {
-      const bindings = this._bindings, propBinding = binding.binding, rootUuid = propBinding.rootNode.uuid, trackName = propBinding.path, bindingsByRoot = this._bindingsByRootAndName, bindingByName = bindingsByRoot[rootUuid], lastInactiveBinding = bindings[bindings.length - 1], cacheIndex = binding._cacheIndex;
-      lastInactiveBinding._cacheIndex = cacheIndex;
-      bindings[cacheIndex] = lastInactiveBinding;
-      bindings.pop();
-      delete bindingByName[trackName];
-      if (Object.keys(bindingByName).length === 0) {
-        delete bindingsByRoot[rootUuid];
-      }
-    }
-    _lendBinding(binding) {
-      const bindings = this._bindings, prevIndex = binding._cacheIndex, lastActiveIndex = this._nActiveBindings++, firstInactiveBinding = bindings[lastActiveIndex];
-      binding._cacheIndex = lastActiveIndex;
-      bindings[lastActiveIndex] = binding;
-      firstInactiveBinding._cacheIndex = prevIndex;
-      bindings[prevIndex] = firstInactiveBinding;
-    }
-    _takeBackBinding(binding) {
-      const bindings = this._bindings, prevIndex = binding._cacheIndex, firstInactiveIndex = --this._nActiveBindings, lastActiveBinding = bindings[firstInactiveIndex];
-      binding._cacheIndex = firstInactiveIndex;
-      bindings[firstInactiveIndex] = binding;
-      lastActiveBinding._cacheIndex = prevIndex;
-      bindings[prevIndex] = lastActiveBinding;
-    }
-    // Memory management of Interpolants for weight and time scale
-    _lendControlInterpolant() {
-      const interpolants = this._controlInterpolants, lastActiveIndex = this._nActiveControlInterpolants++;
-      let interpolant = interpolants[lastActiveIndex];
-      if (interpolant === void 0) {
-        interpolant = new LinearInterpolant(
-          new Float32Array(2),
-          new Float32Array(2),
-          1,
-          _controlInterpolantsResultBuffer
-        );
-        interpolant.__cacheIndex = lastActiveIndex;
-        interpolants[lastActiveIndex] = interpolant;
-      }
-      return interpolant;
-    }
-    _takeBackControlInterpolant(interpolant) {
-      const interpolants = this._controlInterpolants, prevIndex = interpolant.__cacheIndex, firstInactiveIndex = --this._nActiveControlInterpolants, lastActiveInterpolant = interpolants[firstInactiveIndex];
-      interpolant.__cacheIndex = firstInactiveIndex;
-      interpolants[firstInactiveIndex] = interpolant;
-      lastActiveInterpolant.__cacheIndex = prevIndex;
-      interpolants[prevIndex] = lastActiveInterpolant;
-    }
-    // return an action for a clip optionally using a custom root target
-    // object (this method allocates a lot of dynamic memory in case a
-    // previously unknown clip/root combination is specified)
-    clipAction(clip, optionalRoot, blendMode) {
-      const root = optionalRoot || this._root, rootUuid = root.uuid;
-      let clipObject = typeof clip === "string" ? AnimationClip.findByName(root, clip) : clip;
-      const clipUuid = clipObject !== null ? clipObject.uuid : clip;
-      const actionsForClip = this._actionsByClip[clipUuid];
-      let prototypeAction = null;
-      if (blendMode === void 0) {
-        if (clipObject !== null) {
-          blendMode = clipObject.blendMode;
-        } else {
-          blendMode = NormalAnimationBlendMode;
-        }
-      }
-      if (actionsForClip !== void 0) {
-        const existingAction = actionsForClip.actionByRoot[rootUuid];
-        if (existingAction !== void 0 && existingAction.blendMode === blendMode) {
-          return existingAction;
-        }
-        prototypeAction = actionsForClip.knownActions[0];
-        if (clipObject === null)
-          clipObject = prototypeAction._clip;
-      }
-      if (clipObject === null) return null;
-      const newAction = new AnimationAction(this, clipObject, optionalRoot, blendMode);
-      this._bindAction(newAction, prototypeAction);
-      this._addInactiveAction(newAction, clipUuid, rootUuid);
-      return newAction;
-    }
-    // get an existing action
-    existingAction(clip, optionalRoot) {
-      const root = optionalRoot || this._root, rootUuid = root.uuid, clipObject = typeof clip === "string" ? AnimationClip.findByName(root, clip) : clip, clipUuid = clipObject ? clipObject.uuid : clip, actionsForClip = this._actionsByClip[clipUuid];
-      if (actionsForClip !== void 0) {
-        return actionsForClip.actionByRoot[rootUuid] || null;
-      }
-      return null;
-    }
-    // deactivates all previously scheduled actions
-    stopAllAction() {
-      const actions = this._actions, nActions = this._nActiveActions;
-      for (let i = nActions - 1; i >= 0; --i) {
-        actions[i].stop();
-      }
-      return this;
-    }
-    // advance the time and update apply the animation
-    update(deltaTime) {
-      deltaTime *= this.timeScale;
-      const actions = this._actions, nActions = this._nActiveActions, time = this.time += deltaTime, timeDirection = Math.sign(deltaTime), accuIndex = this._accuIndex ^= 1;
-      for (let i = 0; i !== nActions; ++i) {
-        const action = actions[i];
-        action._update(time, deltaTime, timeDirection, accuIndex);
-      }
-      const bindings = this._bindings, nBindings = this._nActiveBindings;
-      for (let i = 0; i !== nBindings; ++i) {
-        bindings[i].apply(accuIndex);
-      }
-      return this;
-    }
-    // Allows you to seek to a specific time in an animation.
-    setTime(timeInSeconds) {
-      this.time = 0;
-      for (let i = 0; i < this._actions.length; i++) {
-        this._actions[i].time = 0;
-      }
-      return this.update(timeInSeconds);
-    }
-    // return this mixer's root target object
-    getRoot() {
-      return this._root;
-    }
-    // free all resources specific to a particular clip
-    uncacheClip(clip) {
-      const actions = this._actions, clipUuid = clip.uuid, actionsByClip = this._actionsByClip, actionsForClip = actionsByClip[clipUuid];
-      if (actionsForClip !== void 0) {
-        const actionsToRemove = actionsForClip.knownActions;
-        for (let i = 0, n = actionsToRemove.length; i !== n; ++i) {
-          const action = actionsToRemove[i];
-          this._deactivateAction(action);
-          const cacheIndex = action._cacheIndex, lastInactiveAction = actions[actions.length - 1];
-          action._cacheIndex = null;
-          action._byClipCacheIndex = null;
-          lastInactiveAction._cacheIndex = cacheIndex;
-          actions[cacheIndex] = lastInactiveAction;
-          actions.pop();
-          this._removeInactiveBindingsForAction(action);
-        }
-        delete actionsByClip[clipUuid];
-      }
-    }
-    // free all resources specific to a particular root target object
-    uncacheRoot(root) {
-      const rootUuid = root.uuid, actionsByClip = this._actionsByClip;
-      for (const clipUuid in actionsByClip) {
-        const actionByRoot = actionsByClip[clipUuid].actionByRoot, action = actionByRoot[rootUuid];
-        if (action !== void 0) {
-          this._deactivateAction(action);
-          this._removeInactiveAction(action);
-        }
-      }
-      const bindingsByRoot = this._bindingsByRootAndName, bindingByName = bindingsByRoot[rootUuid];
-      if (bindingByName !== void 0) {
-        for (const trackName in bindingByName) {
-          const binding = bindingByName[trackName];
-          binding.restoreOriginalState();
-          this._removeInactiveBinding(binding);
-        }
-      }
-    }
-    // remove a targeted clip from the cache
-    uncacheAction(clip, optionalRoot) {
-      const action = this.existingAction(clip, optionalRoot);
-      if (action !== null) {
-        this._deactivateAction(action);
-        this._removeInactiveAction(action);
-      }
-    }
-  };
   if (typeof __THREE_DEVTOOLS__ !== "undefined") {
     __THREE_DEVTOOLS__.dispatchEvent(new CustomEvent("register", { detail: {
       revision: REVISION
@@ -24695,13 +22684,13 @@
     _getNodeRef(cache, index, object) {
       if (cache.refs[index] <= 1) return object;
       const ref = object.clone();
-      const updateMappings = (original, clone2) => {
+      const updateMappings = (original, clone) => {
         const mappings = this.associations.get(original);
         if (mappings != null) {
-          this.associations.set(clone2, mappings);
+          this.associations.set(clone, mappings);
         }
         for (const [i, child] of original.children.entries()) {
-          updateMappings(child, clone2.children[i]);
+          updateMappings(child, clone.children[i]);
         }
       };
       updateMappings(object, ref);
@@ -25764,36 +23753,6 @@
     });
   }
 
-  // node_modules/three/examples/jsm/utils/SkeletonUtils.js
-  function clone(source) {
-    const sourceLookup = /* @__PURE__ */ new Map();
-    const cloneLookup = /* @__PURE__ */ new Map();
-    const clone2 = source.clone();
-    parallelTraverse(source, clone2, function(sourceNode, clonedNode) {
-      sourceLookup.set(clonedNode, sourceNode);
-      cloneLookup.set(sourceNode, clonedNode);
-    });
-    clone2.traverse(function(node) {
-      if (!node.isSkinnedMesh) return;
-      const clonedMesh = node;
-      const sourceMesh = sourceLookup.get(node);
-      const sourceBones = sourceMesh.skeleton.bones;
-      clonedMesh.skeleton = sourceMesh.skeleton.clone();
-      clonedMesh.bindMatrix.copy(sourceMesh.bindMatrix);
-      clonedMesh.skeleton.bones = sourceBones.map(function(bone) {
-        return cloneLookup.get(bone);
-      });
-      clonedMesh.bind(clonedMesh.skeleton, clonedMesh.bindMatrix);
-    });
-    return clone2;
-  }
-  function parallelTraverse(a, b, callback) {
-    callback(a, b);
-    for (let i = 0; i < a.children.length; i++) {
-      parallelTraverse(a.children[i], b.children[i], callback);
-    }
-  }
-
   // www/game3d.js
   var MATCH_MS = 30 * 60 * 1e3;
   var WORLD = 180;
@@ -25844,7 +23803,6 @@
     "cart.glb",
     "fence.glb",
     "fence-gate.glb",
-    "lantern.glb",
     "rock-large.glb",
     "rock-wide.glb",
     "stairs-wood.glb",
@@ -25933,10 +23891,7 @@
   async function loadModels() {
     const loader = new GLTFLoader();
     const status = $("loadStatus");
-    const jobs = [
-      { key: "xbot.glb", url: "./models/xbot.glb" },
-      ...TOWN_FILES.map((f) => ({ key: `town/${f}`, url: `./models/town/${f}` }))
-    ];
+    const jobs = TOWN_FILES.map((f) => ({ key: `town/${f}`, url: `./models/town/${f}` }));
     const total = jobs.length;
     for (let i = 0; i < total; i++) {
       const job = jobs[i];
@@ -25958,11 +23913,7 @@
   function cloneTemplate(key) {
     const gltf = templates[key];
     if (!gltf) throw new Error(`Falta modelo ${key}`);
-    let hasSkin = false;
-    gltf.scene.traverse((c) => {
-      if (c.isSkinnedMesh) hasSkin = true;
-    });
-    const root = hasSkin ? clone(gltf.scene) : gltf.scene.clone(true);
+    const root = gltf.scene.clone(true);
     root.traverse((c) => {
       if (c.isMesh) {
         c.castShadow = true;
@@ -26106,10 +24057,42 @@
       [-6, 6],
       [6, 6],
       [-6, -6],
-      [6, -6]
+      [6, -6],
+      [0, 10],
+      [0, -10]
     ]) {
-      place("town/lantern.glb", x, 0, z, 0, s);
+      worldRoot.add(makeTorch(x, z));
     }
+  }
+  function makeTorch(x, z) {
+    const g = new Group();
+    const post = new Mesh(
+      new CylinderGeometry(0.07, 0.09, 2.2, 6),
+      new MeshStandardMaterial({ color: 3810324, roughness: 0.95 })
+    );
+    post.position.y = 1.1;
+    const head = new Mesh(
+      new BoxGeometry(0.22, 0.28, 0.22),
+      new MeshStandardMaterial({ color: 2759184, roughness: 1 })
+    );
+    head.position.y = 2.2;
+    const flame = new Mesh(
+      new SphereGeometry(0.12, 8, 8),
+      new MeshStandardMaterial({
+        color: 16738842,
+        emissive: 16733456,
+        emissiveIntensity: 1.4,
+        roughness: 1
+      })
+    );
+    flame.position.y = 2.45;
+    flame.userData.flame = true;
+    g.add(post, head, flame);
+    g.position.set(x, 0, z);
+    const light = new PointLight(16742960, 0.55, 12, 2);
+    light.position.set(0, 2.4, 0);
+    g.add(light);
+    return g;
   }
   function scatterNature() {
     const s = TOWN_SCALE;
@@ -26154,11 +24137,11 @@
   function buildExtraHouses() {
     const extras = [
       { x: -48, z: -30, w: 2, d: 2, wood: true },
-      { x: -52, z: 10, w: 2, d: 3, wood: false },
+      { x: -52, z: 10, w: 2, d: 3, wood: true },
       { x: 48, z: -12, w: 3, d: 2, wood: true },
-      { x: 46, z: 20, w: 2, d: 2, wood: false },
+      { x: 46, z: 20, w: 2, d: 2, wood: true },
       { x: -18, z: 48, w: 2, d: 2, wood: true },
-      { x: 30, z: 48, w: 3, d: 2, wood: false },
+      { x: 30, z: 48, w: 3, d: 2, wood: true },
       { x: -40, z: 40, w: 2, d: 2, wood: true }
     ];
     extras.forEach((e, i) => {
@@ -26178,17 +24161,19 @@
     while (worldRoot.children.length) worldRoot.remove(worldRoot.children[0]);
     const dirt = new Mesh(
       new PlaneGeometry(WORLD * 2, WORLD * 2),
-      new MeshStandardMaterial({ color: 8021320, roughness: 0.95 })
+      new MeshStandardMaterial({ color: 4864552, roughness: 1 })
     );
     dirt.rotation.x = -Math.PI / 2;
     dirt.receiveShadow = true;
     worldRoot.add(dirt);
     for (const [x, z, r, c] of [
-      [0, 0, 28, 6261322],
-      [-35, 15, 16, 5668418],
-      [30, -20, 18, 6459212],
-      [10, 40, 14, 5931840],
-      [-25, -35, 15, 5207608]
+      [0, 0, 26, 4147758],
+      [-35, 15, 16, 3818792],
+      [30, -20, 18, 4542510],
+      [10, 40, 14, 3686950],
+      [-25, -35, 15, 3358754],
+      [20, 10, 8, 5914664],
+      [-15, 8, 6, 5388320]
     ]) {
       const grass = new Mesh(
         new CircleGeometry(r, 28),
@@ -26198,6 +24183,20 @@
       grass.position.set(x, 0.02, z);
       grass.receiveShadow = true;
       worldRoot.add(grass);
+    }
+    for (const [x, z, r] of [
+      [4, 3, 2.2],
+      [-7, -2, 1.6],
+      [12, 16, 1.8],
+      [-18, 6, 2.4]
+    ]) {
+      const mud = new Mesh(
+        new CircleGeometry(r, 16),
+        new MeshStandardMaterial({ color: 3023384, roughness: 0.85, metalness: 0.05 })
+      );
+      mud.rotation.x = -Math.PI / 2;
+      mud.position.set(x, 0.03, z);
+      worldRoot.add(mud);
     }
     buildPlaza();
     buildHouse(-28, -22, {
@@ -26330,137 +24329,132 @@
       btn.textContent = "ENTRAR";
     }
   }
-  function stripWeapons(root) {
-    const kill = [];
-    root.traverse((c) => {
-      const n = `${c.name || ""}`.toLowerCase();
-      if (/weapon|gun|rifle|sword|knife|pistol|blade|axe|bow|arrow|shield|spear/.test(n)) {
-        kill.push(c);
-      }
-    });
-    for (const c of kill) {
-      if (c.parent) c.parent.remove(c);
-    }
-  }
-  function tintCharacter(root, clothesHex, accentHex) {
-    root.traverse((c) => {
-      if (!c.isMesh || !c.material) return;
-      const wasArray = Array.isArray(c.material);
-      const mats = wasArray ? c.material : [c.material];
-      const next = mats.map((m) => {
-        const mat = m.clone();
-        const name = `${c.name || ""} ${mat.name || ""}`.toLowerCase();
-        if (/eye|teeth|tooth|cornea/.test(name)) return mat;
-        if (/skin|face|head|hand|arm|neck|body/.test(name) && !/shirt|pant|boot|cloth|suit/.test(name)) {
-          mat.color = new Color(13010498);
-          mat.metalness = 0.05;
-          mat.roughness = 0.75;
-          return mat;
-        }
-        if (/hair|beard/.test(name)) {
-          mat.color = new Color(2759186);
-          return mat;
-        }
-        mat.color = new Color(
-          /boot|shoe|pant|leg/.test(name) && accentHex ? accentHex : clothesHex
-        );
-        mat.metalness = 0.1;
-        mat.roughness = 0.65;
-        return mat;
-      });
-      c.material = wasArray ? next : next[0];
-    });
-  }
-  function makeSimplePerson(role) {
+  function makeColonialPerson(role) {
     const g = new Group();
-    const skin = new MeshStandardMaterial({ color: 13010498, roughness: 0.7 });
-    const cloth = role === "Alcalde" ? new MeshStandardMaterial({ color: 3108781, roughness: 0.6 }) : new MeshStandardMaterial({ color: 3811880, roughness: 0.7 });
-    const pants = new MeshStandardMaterial({
-      color: role === "Alcalde" ? 1979208 : 1380879,
-      roughness: 0.8
+    const skin = new MeshStandardMaterial({ color: 12157018, roughness: 0.8 });
+    const isMayor = role === "Alcalde";
+    const isCrier = role === "Pregonero";
+    const coat = new MeshStandardMaterial({
+      color: isMayor ? 2051962 : isCrier ? 7031336 : 1709074,
+      roughness: 0.85
     });
-    const body = new Mesh(new CapsuleGeometry(0.32, 0.7, 6, 10), cloth);
-    body.position.y = 1.05;
-    const head = new Mesh(new SphereGeometry(0.24, 12, 12), skin);
-    head.position.y = 1.72;
-    const legL = new Mesh(new CapsuleGeometry(0.12, 0.35, 4, 8), pants);
-    legL.position.set(-0.12, 0.4, 0);
-    const legR = legL.clone();
-    legR.position.x = 0.12;
-    g.add(body, head, legL, legR);
-    if (role === "Alcalde") {
-      const hat = new Mesh(
-        new CylinderGeometry(0.26, 0.3, 0.16, 12),
-        new MeshStandardMaterial({ color: 1710626 })
+    const pants = new MeshStandardMaterial({
+      color: isMayor ? 1715773 : isCrier ? 3811864 : 920587,
+      roughness: 0.9
+    });
+    const boot = new MeshStandardMaterial({ color: 1708556, roughness: 1 });
+    const hips = new Group();
+    hips.position.y = 0.95;
+    g.add(hips);
+    const torso = new Mesh(new BoxGeometry(0.42, 0.55, 0.24), coat);
+    torso.position.y = 0.28;
+    hips.add(torso);
+    const head = new Mesh(new SphereGeometry(0.16, 12, 12), skin);
+    head.position.y = 0.72;
+    hips.add(head);
+    const armL = new Group();
+    armL.position.set(-0.28, 0.45, 0);
+    const armLMesh = new Mesh(new BoxGeometry(0.1, 0.48, 0.1), coat);
+    armLMesh.position.y = -0.22;
+    armL.add(armLMesh);
+    const armR = new Group();
+    armR.position.set(0.28, 0.45, 0);
+    const armRMesh = new Mesh(new BoxGeometry(0.1, 0.48, 0.1), coat);
+    armRMesh.position.y = -0.22;
+    armR.add(armRMesh);
+    hips.add(armL, armR);
+    const legL = new Group();
+    legL.position.set(-0.12, 0, 0);
+    const thighL = new Mesh(new BoxGeometry(0.14, 0.45, 0.14), pants);
+    thighL.position.y = -0.22;
+    const bootL = new Mesh(new BoxGeometry(0.15, 0.18, 0.22), boot);
+    bootL.position.set(0, -0.52, 0.02);
+    legL.add(thighL, bootL);
+    const legR = new Group();
+    legR.position.set(0.12, 0, 0);
+    const thighR = new Mesh(new BoxGeometry(0.14, 0.45, 0.14), pants);
+    thighR.position.y = -0.22;
+    const bootR = new Mesh(new BoxGeometry(0.15, 0.18, 0.22), boot);
+    bootR.position.set(0, -0.52, 0.02);
+    legR.add(thighR, bootR);
+    hips.add(legL, legR);
+    if (isMayor) {
+      const collar = new Mesh(
+        new BoxGeometry(0.36, 0.08, 0.28),
+        new MeshStandardMaterial({ color: 14209216, roughness: 0.7 })
       );
-      hat.position.y = 1.95;
-      const brim = new Mesh(
-        new CylinderGeometry(0.4, 0.4, 0.04, 12),
+      collar.position.y = 0.55;
+      hips.add(collar);
+      const hat = new Group();
+      hat.position.y = 0.88;
+      const top = new Mesh(
+        new CylinderGeometry(0.14, 0.15, 0.22, 10),
         new MeshStandardMaterial({ color: 1118488 })
       );
-      brim.position.y = 1.87;
-      g.add(hat, brim);
-    } else {
-      const hood = new Mesh(
-        new SphereGeometry(0.3, 10, 10, 0, Math.PI * 2, 0, Math.PI / 2),
-        new MeshStandardMaterial({ color: 1708560, side: DoubleSide })
+      top.position.y = 0.12;
+      const brim = new Mesh(
+        new CylinderGeometry(0.26, 0.26, 0.03, 12),
+        new MeshStandardMaterial({ color: 855312 })
       );
-      hood.position.y = 1.78;
-      g.add(hood);
+      hat.add(top, brim);
+      hips.add(hat);
+    } else if (isCrier) {
+      const bell = new Mesh(
+        new SphereGeometry(0.08, 8, 8),
+        new MeshStandardMaterial({ color: 13214247, metalness: 0.6, roughness: 0.35 })
+      );
+      bell.position.set(0.35, 0.2, 0.1);
+      armR.add(bell);
+      const sash = new Mesh(
+        new BoxGeometry(0.44, 0.08, 0.26),
+        new MeshStandardMaterial({ color: 9051678 })
+      );
+      sash.position.y = 0.1;
+      hips.add(sash);
+    } else {
+      const cloak = new Mesh(
+        new BoxGeometry(0.55, 0.7, 0.12),
+        new MeshStandardMaterial({ color: 789001, roughness: 0.95, side: DoubleSide })
+      );
+      cloak.position.set(0, 0.25, -0.18);
+      hips.add(cloak);
+      const hood = new Mesh(
+        new SphereGeometry(0.2, 10, 10, 0, Math.PI * 2, 0, Math.PI / 1.6),
+        new MeshStandardMaterial({ color: 789001, side: DoubleSide, roughness: 1 })
+      );
+      hood.position.set(0, 0.78, -0.02);
+      hips.add(hood);
     }
-    g.userData.radius = 0.45;
-    g.userData.role = role;
-    g.userData.animations = [];
     g.traverse((c) => {
       if (c.isMesh) {
         c.castShadow = true;
         c.receiveShadow = true;
       }
     });
+    g.userData.radius = 0.35;
+    g.userData.role = role;
+    g.userData.walk = { phase: 0, armL, armR, legL, legR, hips };
+    g.userData.moving = false;
     return g;
   }
-  function makeRoleCharacter(role) {
-    try {
-      if (!templates["xbot.glb"]) return makeSimplePerson(role);
-      const { root, animations } = cloneTemplate("xbot.glb");
-      stripWeapons(root);
-      const box = boxOf(root);
-      const h = Math.max(0.01, box.max.y - box.min.y);
-      const targetH = 1.85;
-      root.scale.setScalar(targetH / h);
-      root.position.y = 0;
-      const box2 = boxOf(root);
-      root.position.y -= box2.min.y;
-      if (role === "Alcalde") {
-        tintCharacter(root, 3108781, 1979208);
-        const hat = new Mesh(
-          new CylinderGeometry(0.28, 0.34, 0.18, 12),
-          new MeshStandardMaterial({ color: 1710626 })
-        );
-        hat.position.set(0, 1.85, 0);
-        root.add(hat);
-        const brim = new Mesh(
-          new CylinderGeometry(0.42, 0.42, 0.04, 12),
-          new MeshStandardMaterial({ color: 1118488 })
-        );
-        brim.position.set(0, 1.76, 0);
-        root.add(brim);
-      } else {
-        tintCharacter(root, 4009e3, 1709072);
-        const hood = new Mesh(
-          new SphereGeometry(0.32, 10, 10, 0, Math.PI * 2, 0, Math.PI / 2),
-          new MeshStandardMaterial({ color: 2365462, side: DoubleSide })
-        );
-        hood.position.set(0, 1.72, 0);
-        root.add(hood);
-      }
-      root.userData.radius = 0.45;
-      root.userData.role = role;
-      root.userData.animations = animations;
-      return root;
-    } catch (e) {
-      console.error(e);
-      return makeSimplePerson(role);
+  function updateWalk(root, dt, moving) {
+    const w = root.userData.walk;
+    if (!w) return;
+    root.userData.moving = moving;
+    if (moving) {
+      w.phase += dt * 9;
+      const s = Math.sin(w.phase);
+      w.legL.rotation.x = s * 0.7;
+      w.legR.rotation.x = -s * 0.7;
+      w.armL.rotation.x = -s * 0.55;
+      w.armR.rotation.x = s * 0.55;
+      w.hips.position.y = 0.95 + Math.abs(Math.sin(w.phase * 2)) * 0.03;
+    } else {
+      w.legL.rotation.x *= 0.7;
+      w.legR.rotation.x *= 0.7;
+      w.armL.rotation.x *= 0.7;
+      w.armR.rotation.x *= 0.7;
+      w.hips.position.y = 0.95;
     }
   }
   function clearCharacters() {
@@ -26476,22 +24470,18 @@
     playerActions = null;
   }
   function attachCharacter(role, isPlayer, x, z) {
-    const root = makeRoleCharacter(role);
-    root.position.x = x;
-    root.position.z = z;
+    const root = makeColonialPerson(role);
+    root.position.set(x, 0, z);
     scene.add(root);
-    if (isPlayer) {
-      player = root;
-      const animations = root.userData.animations || [];
-      if (animations.length) {
-        mixer = new AnimationMixer(player);
-        const clip = animations.find((a) => /walk|run|idle/i.test(a.name)) || animations[0];
-        playerActions = mixer.clipAction(clip);
-        playerActions.play();
-        playerActions.paused = true;
-      }
-    }
+    if (isPlayer) player = root;
     return root;
+  }
+  function attachCrier() {
+    const c = makeColonialPerson("Pregonero");
+    c.position.set(-3.5, 0, 4.5);
+    c.rotation.y = Math.PI * 0.25;
+    scene.add(c);
+    return c;
   }
   function initThree() {
     const canvas = $("c");
@@ -26500,17 +24490,17 @@
     renderer.shadowMap.enabled = true;
     renderer.outputColorSpace = SRGBColorSpace;
     scene = new Scene();
-    scene.background = new Color(9351368);
-    scene.fog = new Fog(9351368, 55, 140);
+    scene.background = new Color(6976360);
+    scene.fog = new Fog(6976360, 40, 120);
     camera = new PerspectiveCamera(55, 1, 0.1, 260);
     clock = new Clock();
-    scene.add(new HemisphereLight(16774630, 4016680, 1.25));
-    const sun = new DirectionalLight(16771272, 1.15);
-    sun.position.set(30, 40, 18);
+    scene.add(new HemisphereLight(14207144, 2761240, 0.95));
+    const sun = new DirectionalLight(15257768, 0.85);
+    sun.position.set(22, 28, 10);
     sun.castShadow = true;
     sun.shadow.mapSize.set(1024, 1024);
     scene.add(sun);
-    scene.add(new AmbientLight(16777215, 0.35));
+    scene.add(new AmbientLight(12101768, 0.28));
     worldRoot = new Group();
     interiorRoot = new Group();
     interiorRoot.visible = false;
@@ -26534,25 +24524,31 @@
     requestAnimationFrame(tick);
     if (!renderer) return;
     const dt = Math.min(clock.getDelta(), 0.05);
-    if (mixer) mixer.update(dt);
     if (state.running && $("game").classList.contains("active") && player) {
-      const speed = 5.8;
+      const speed = 4.6;
       const fromX = player.position.x;
       const fromZ = player.position.z;
       const toX = fromX + state.move.x * speed * dt;
       const toZ = fromZ + state.move.z * speed * dt;
-      const next = resolveMove(fromX, fromZ, toX, toZ, player.userData.radius || 0.45);
+      const next = resolveMove(fromX, fromZ, toX, toZ, player.userData.radius || 0.35);
       player.position.x = next.x;
       player.position.z = next.z;
-      if (state.move.x || state.move.z) {
-        player.rotation.y = Math.atan2(state.move.x, state.move.z) + Math.PI;
-        if (playerActions) playerActions.paused = false;
-      } else if (playerActions) {
-        playerActions.paused = true;
+      const moving = !!(state.move.x || state.move.z);
+      if (moving) {
+        player.rotation.y = Math.atan2(state.move.x, state.move.z);
       }
+      updateWalk(player, dt, moving);
       updateDoors();
-      camera.position.set(player.position.x, 10, player.position.z + 12);
-      camera.lookAt(player.position.x, 1.5, player.position.z);
+      camera.position.set(player.position.x, 7.5, player.position.z + 9);
+      camera.lookAt(player.position.x, 1.2, player.position.z);
+    }
+    if (worldRoot) {
+      worldRoot.traverse((c) => {
+        if (c.userData?.flame && c.material) {
+          c.material.emissiveIntensity = 1.1 + Math.sin(performance.now() / 120 + c.id) * 0.35;
+          c.scale.setScalar(0.9 + Math.sin(performance.now() / 90 + c.id) * 0.15);
+        }
+      });
     }
     renderer.render(scene, camera);
   }
@@ -26617,13 +24613,14 @@
     clearCharacters();
     attachCharacter(state.you, true, 0, 14);
     attachCharacter(state.foe, false, 6, -5);
+    attachCrier();
     show("game");
     resize();
     clearInterval(state.timerId);
     state.timerId = setInterval(updateTimer, 250);
     updateTimer();
     crier(
-      `Sos ${state.you}. Plaza grande, casas y \xE1rboles. El ${state.foe} est\xE1 quieto. Puerta brillante = ENTRAR.`
+      `Sos ${state.you} (tama\xF1o humano). Ciudad sucia tipo Salem, antorchas (no faroles). El ${state.foe} est\xE1 quieto. Pregonero en la Plaza.`
     );
   }
   function updateTimer() {

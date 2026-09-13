@@ -1,6 +1,5 @@
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
-import { clone as skeletonClone } from 'three/addons/utils/SkeletonUtils.js'
 
 const MATCH_MS = 30 * 60 * 1000
 const WORLD = 180
@@ -53,7 +52,6 @@ const TOWN_FILES = [
   'cart.glb',
   'fence.glb',
   'fence-gate.glb',
-  'lantern.glb',
   'rock-large.glb',
   'rock-wide.glb',
   'stairs-wood.glb',
@@ -143,10 +141,8 @@ function makeSign(text, x, y, z, rotY) {
 async function loadModels() {
   const loader = new GLTFLoader()
   const status = $('loadStatus')
-  const jobs = [
-    { key: 'xbot.glb', url: './models/xbot.glb' },
-    ...TOWN_FILES.map((f) => ({ key: `town/${f}`, url: `./models/town/${f}` })),
-  ]
+  // Personajes se arman en código (época colonial); no usamos xbot gigante.
+  const jobs = TOWN_FILES.map((f) => ({ key: `town/${f}`, url: `./models/town/${f}` }))
   const total = jobs.length
   for (let i = 0; i < total; i++) {
     const job = jobs[i]
@@ -169,11 +165,7 @@ async function loadModels() {
 function cloneTemplate(key) {
   const gltf = templates[key]
   if (!gltf) throw new Error(`Falta modelo ${key}`)
-  let hasSkin = false
-  gltf.scene.traverse((c) => {
-    if (c.isSkinnedMesh) hasSkin = true
-  })
-  const root = hasSkin ? skeletonClone(gltf.scene) : gltf.scene.clone(true)
+  const root = gltf.scene.clone(true)
   root.traverse((c) => {
     if (c.isMesh) {
       c.castShadow = true
@@ -332,21 +324,54 @@ function buildPlaza() {
     place('town/road-corner.glb', x * s, 0.01, z * s, ry, s)
   }
 
-  // puestos de mercado
+  // puestos de mercado (sucios / época)
   place('town/stall-red.glb', -10, 0, 8, 0.4, s)
   place('town/stall-green.glb', 11, 0, 7, -0.3, s)
   place('town/stall.glb', -8, 0, -9, 0.2, s)
   place('town/cart.glb', 9, 0, -8, 1.2, s * 0.9)
 
-  // faroles
+  // antorchas de madera + llama (no faroles eléctricos)
   for (const [x, z] of [
     [-6, 6],
     [6, 6],
     [-6, -6],
     [6, -6],
+    [0, 10],
+    [0, -10],
   ]) {
-    place('town/lantern.glb', x, 0, z, 0, s)
+    worldRoot.add(makeTorch(x, z))
   }
+}
+
+function makeTorch(x, z) {
+  const g = new THREE.Group()
+  const post = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.07, 0.09, 2.2, 6),
+    new THREE.MeshStandardMaterial({ color: 0x3a2414, roughness: 0.95 }),
+  )
+  post.position.y = 1.1
+  const head = new THREE.Mesh(
+    new THREE.BoxGeometry(0.22, 0.28, 0.22),
+    new THREE.MeshStandardMaterial({ color: 0x2a1a10, roughness: 1 }),
+  )
+  head.position.y = 2.2
+  const flame = new THREE.Mesh(
+    new THREE.SphereGeometry(0.12, 8, 8),
+    new THREE.MeshStandardMaterial({
+      color: 0xff6a1a,
+      emissive: 0xff5510,
+      emissiveIntensity: 1.4,
+      roughness: 1,
+    }),
+  )
+  flame.position.y = 2.45
+  flame.userData.flame = true
+  g.add(post, head, flame)
+  g.position.set(x, 0, z)
+  const light = new THREE.PointLight(0xff7a30, 0.55, 12, 2)
+  light.position.set(0, 2.4, 0)
+  g.add(light)
+  return g
 }
 
 function scatterNature() {
@@ -395,11 +420,11 @@ function buildExtraHouses() {
   // casas de relleno para sensación de ciudad
   const extras = [
     { x: -48, z: -30, w: 2, d: 2, wood: true },
-    { x: -52, z: 10, w: 2, d: 3, wood: false },
+    { x: -52, z: 10, w: 2, d: 3, wood: true },
     { x: 48, z: -12, w: 3, d: 2, wood: true },
-    { x: 46, z: 20, w: 2, d: 2, wood: false },
+    { x: 46, z: 20, w: 2, d: 2, wood: true },
     { x: -18, z: 48, w: 2, d: 2, wood: true },
-    { x: 30, z: 48, w: 3, d: 2, wood: false },
+    { x: 30, z: 48, w: 3, d: 2, wood: true },
     { x: -40, z: 40, w: 2, d: 2, wood: true },
   ]
   extras.forEach((e, i) => {
@@ -419,21 +444,23 @@ function buildExterior() {
   doorMeshes = []
   while (worldRoot.children.length) worldRoot.remove(worldRoot.children[0])
 
-  // suelo: tierra + manchas de pasto
+  // suelo sucio tipo Salem: barro / tierra oscura + pasto seco
   const dirt = new THREE.Mesh(
     new THREE.PlaneGeometry(WORLD * 2, WORLD * 2),
-    new THREE.MeshStandardMaterial({ color: 0x7a6548, roughness: 0.95 }),
+    new THREE.MeshStandardMaterial({ color: 0x4a3a28, roughness: 1 }),
   )
   dirt.rotation.x = -Math.PI / 2
   dirt.receiveShadow = true
   worldRoot.add(dirt)
 
   for (const [x, z, r, c] of [
-    [0, 0, 28, 0x5f8a4a],
-    [-35, 15, 16, 0x567e42],
-    [30, -20, 18, 0x628f4c],
-    [10, 40, 14, 0x5a8340],
-    [-25, -35, 15, 0x4f7638],
+    [0, 0, 26, 0x3f4a2e],
+    [-35, 15, 16, 0x3a4528],
+    [30, -20, 18, 0x45502e],
+    [10, 40, 14, 0x384226],
+    [-25, -35, 15, 0x334022],
+    [20, 10, 8, 0x5a4028],
+    [-15, 8, 6, 0x523820],
   ]) {
     const grass = new THREE.Mesh(
       new THREE.CircleGeometry(r, 28),
@@ -443,6 +470,21 @@ function buildExterior() {
     grass.position.set(x, 0.02, z)
     grass.receiveShadow = true
     worldRoot.add(grass)
+  }
+  // charcos de barro
+  for (const [x, z, r] of [
+    [4, 3, 2.2],
+    [-7, -2, 1.6],
+    [12, 16, 1.8],
+    [-18, 6, 2.4],
+  ]) {
+    const mud = new THREE.Mesh(
+      new THREE.CircleGeometry(r, 16),
+      new THREE.MeshStandardMaterial({ color: 0x2e2218, roughness: 0.85, metalness: 0.05 }),
+    )
+    mud.rotation.x = -Math.PI / 2
+    mud.position.set(x, 0.03, z)
+    worldRoot.add(mud)
   }
 
   buildPlaza()
@@ -583,147 +625,141 @@ function updateDoors() {
   }
 }
 
-function stripWeapons(root) {
-  const kill = []
-  root.traverse((c) => {
-    const n = `${c.name || ''}`.toLowerCase()
-    if (/weapon|gun|rifle|sword|knife|pistol|blade|axe|bow|arrow|shield|spear/.test(n)) {
-      kill.push(c)
-    }
-  })
-  for (const c of kill) {
-    if (c.parent) c.parent.remove(c)
-  }
-}
-
-function tintCharacter(root, clothesHex, accentHex) {
-  root.traverse((c) => {
-    if (!c.isMesh || !c.material) return
-    const wasArray = Array.isArray(c.material)
-    const mats = wasArray ? c.material : [c.material]
-    const next = mats.map((m) => {
-      const mat = m.clone()
-      const name = `${c.name || ''} ${mat.name || ''}`.toLowerCase()
-      if (/eye|teeth|tooth|cornea/.test(name)) return mat
-      if (/skin|face|head|hand|arm|neck|body/.test(name) && !/shirt|pant|boot|cloth|suit/.test(name)) {
-        mat.color = new THREE.Color(0xc68642)
-        mat.metalness = 0.05
-        mat.roughness = 0.75
-        return mat
-      }
-      if (/hair|beard/.test(name)) {
-        mat.color = new THREE.Color(0x2a1a12)
-        return mat
-      }
-      mat.color = new THREE.Color(
-        /boot|shoe|pant|leg/.test(name) && accentHex ? accentHex : clothesHex,
-      )
-      mat.metalness = 0.1
-      mat.roughness = 0.65
-      return mat
-    })
-    c.material = wasArray ? next : next[0]
-  })
-}
-
-function makeSimplePerson(role) {
-  // respaldo si el modelo animado falla: figura clara, no sombra
+function makeColonialPerson(role) {
   const g = new THREE.Group()
-  const skin = new THREE.MeshStandardMaterial({ color: 0xc68642, roughness: 0.7 })
-  const cloth =
-    role === 'Alcalde'
-      ? new THREE.MeshStandardMaterial({ color: 0x2f6fad, roughness: 0.6 })
-      : new THREE.MeshStandardMaterial({ color: 0x3a2a28, roughness: 0.7 })
-  const pants = new THREE.MeshStandardMaterial({
-    color: role === 'Alcalde' ? 0x1e3348 : 0x15120f,
-    roughness: 0.8,
+  const skin = new THREE.MeshStandardMaterial({ color: 0xb9805a, roughness: 0.8 })
+  const isMayor = role === 'Alcalde'
+  const isCrier = role === 'Pregonero'
+  const coat = new THREE.MeshStandardMaterial({
+    color: isMayor ? 0x1f4f7a : isCrier ? 0x6b4a28 : 0x1a1412,
+    roughness: 0.85,
   })
-  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.32, 0.7, 6, 10), cloth)
-  body.position.y = 1.05
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.24, 12, 12), skin)
-  head.position.y = 1.72
-  const legL = new THREE.Mesh(new THREE.CapsuleGeometry(0.12, 0.35, 4, 8), pants)
-  legL.position.set(-0.12, 0.4, 0)
-  const legR = legL.clone()
-  legR.position.x = 0.12
-  g.add(body, head, legL, legR)
-  if (role === 'Alcalde') {
-    const hat = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.26, 0.3, 0.16, 12),
-      new THREE.MeshStandardMaterial({ color: 0x1a1a22 }),
+  const pants = new THREE.MeshStandardMaterial({
+    color: isMayor ? 0x1a2e3d : isCrier ? 0x3a2a18 : 0x0e0c0b,
+    roughness: 0.9,
+  })
+  const boot = new THREE.MeshStandardMaterial({ color: 0x1a120c, roughness: 1 })
+
+  const hips = new THREE.Group()
+  hips.position.y = 0.95
+  g.add(hips)
+
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.55, 0.24), coat)
+  torso.position.y = 0.28
+  hips.add(torso)
+
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.16, 12, 12), skin)
+  head.position.y = 0.72
+  hips.add(head)
+
+  const armL = new THREE.Group()
+  armL.position.set(-0.28, 0.45, 0)
+  const armLMesh = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.48, 0.1), coat)
+  armLMesh.position.y = -0.22
+  armL.add(armLMesh)
+  const armR = new THREE.Group()
+  armR.position.set(0.28, 0.45, 0)
+  const armRMesh = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.48, 0.1), coat)
+  armRMesh.position.y = -0.22
+  armR.add(armRMesh)
+  hips.add(armL, armR)
+
+  const legL = new THREE.Group()
+  legL.position.set(-0.12, 0, 0)
+  const thighL = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.45, 0.14), pants)
+  thighL.position.y = -0.22
+  const bootL = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.18, 0.22), boot)
+  bootL.position.set(0, -0.52, 0.02)
+  legL.add(thighL, bootL)
+  const legR = new THREE.Group()
+  legR.position.set(0.12, 0, 0)
+  const thighR = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.45, 0.14), pants)
+  thighR.position.y = -0.22
+  const bootR = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.18, 0.22), boot)
+  bootR.position.set(0, -0.52, 0.02)
+  legR.add(thighR, bootR)
+  hips.add(legL, legR)
+
+  if (isMayor) {
+    const collar = new THREE.Mesh(
+      new THREE.BoxGeometry(0.36, 0.08, 0.28),
+      new THREE.MeshStandardMaterial({ color: 0xd8d0c0, roughness: 0.7 }),
     )
-    hat.position.y = 1.95
-    const brim = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.4, 0.4, 0.04, 12),
+    collar.position.y = 0.55
+    hips.add(collar)
+    const hat = new THREE.Group()
+    hat.position.y = 0.88
+    const top = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.14, 0.15, 0.22, 10),
       new THREE.MeshStandardMaterial({ color: 0x111118 }),
     )
-    brim.position.y = 1.87
-    g.add(hat, brim)
-  } else {
-    const hood = new THREE.Mesh(
-      new THREE.SphereGeometry(0.3, 10, 10, 0, Math.PI * 2, 0, Math.PI / 2),
-      new THREE.MeshStandardMaterial({ color: 0x1a1210, side: THREE.DoubleSide }),
+    top.position.y = 0.12
+    const brim = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.26, 0.26, 0.03, 12),
+      new THREE.MeshStandardMaterial({ color: 0x0d0d10 }),
     )
-    hood.position.y = 1.78
-    g.add(hood)
+    hat.add(top, brim)
+    hips.add(hat)
+  } else if (isCrier) {
+    const bell = new THREE.Mesh(
+      new THREE.SphereGeometry(0.08, 8, 8),
+      new THREE.MeshStandardMaterial({ color: 0xc9a227, metalness: 0.6, roughness: 0.35 }),
+    )
+    bell.position.set(0.35, 0.2, 0.1)
+    armR.add(bell)
+    const sash = new THREE.Mesh(
+      new THREE.BoxGeometry(0.44, 0.08, 0.26),
+      new THREE.MeshStandardMaterial({ color: 0x8a1e1e }),
+    )
+    sash.position.y = 0.1
+    hips.add(sash)
+  } else {
+    const cloak = new THREE.Mesh(
+      new THREE.BoxGeometry(0.55, 0.7, 0.12),
+      new THREE.MeshStandardMaterial({ color: 0x0c0a09, roughness: 0.95, side: THREE.DoubleSide }),
+    )
+    cloak.position.set(0, 0.25, -0.18)
+    hips.add(cloak)
+    const hood = new THREE.Mesh(
+      new THREE.SphereGeometry(0.2, 10, 10, 0, Math.PI * 2, 0, Math.PI / 1.6),
+      new THREE.MeshStandardMaterial({ color: 0x0c0a09, side: THREE.DoubleSide, roughness: 1 }),
+    )
+    hood.position.set(0, 0.78, -0.02)
+    hips.add(hood)
   }
-  g.userData.radius = 0.45
-  g.userData.role = role
-  g.userData.animations = []
+
   g.traverse((c) => {
     if (c.isMesh) {
       c.castShadow = true
       c.receiveShadow = true
     }
   })
+
+  g.userData.radius = 0.35
+  g.userData.role = role
+  g.userData.walk = { phase: 0, armL, armR, legL, legR, hips }
+  g.userData.moving = false
   return g
 }
 
-function makeRoleCharacter(role) {
-  try {
-    if (!templates['xbot.glb']) return makeSimplePerson(role)
-    const { root, animations } = cloneTemplate('xbot.glb')
-    stripWeapons(root)
-    // Mixamo suele venir enorme: normalizar altura ~1.8
-    const box = boxOf(root)
-    const h = Math.max(0.01, box.max.y - box.min.y)
-    const targetH = 1.85
-    root.scale.setScalar(targetH / h)
-    root.position.y = 0
-    // realinear al suelo
-    const box2 = boxOf(root)
-    root.position.y -= box2.min.y
-
-    if (role === 'Alcalde') {
-      tintCharacter(root, 0x2f6fad, 0x1e3348)
-      const hat = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.28, 0.34, 0.18, 12),
-        new THREE.MeshStandardMaterial({ color: 0x1a1a22 }),
-      )
-      hat.position.set(0, 1.85, 0)
-      root.add(hat)
-      const brim = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.42, 0.42, 0.04, 12),
-        new THREE.MeshStandardMaterial({ color: 0x111118 }),
-      )
-      brim.position.set(0, 1.76, 0)
-      root.add(brim)
-    } else {
-      tintCharacter(root, 0x3d2c28, 0x1a1410)
-      const hood = new THREE.Mesh(
-        new THREE.SphereGeometry(0.32, 10, 10, 0, Math.PI * 2, 0, Math.PI / 2),
-        new THREE.MeshStandardMaterial({ color: 0x241816, side: THREE.DoubleSide }),
-      )
-      hood.position.set(0, 1.72, 0)
-      root.add(hood)
-    }
-    root.userData.radius = 0.45
-    root.userData.role = role
-    root.userData.animations = animations
-    return root
-  } catch (e) {
-    console.error(e)
-    return makeSimplePerson(role)
+function updateWalk(root, dt, moving) {
+  const w = root.userData.walk
+  if (!w) return
+  root.userData.moving = moving
+  if (moving) {
+    w.phase += dt * 9
+    const s = Math.sin(w.phase)
+    w.legL.rotation.x = s * 0.7
+    w.legR.rotation.x = -s * 0.7
+    w.armL.rotation.x = -s * 0.55
+    w.armR.rotation.x = s * 0.55
+    w.hips.position.y = 0.95 + Math.abs(Math.sin(w.phase * 2)) * 0.03
+  } else {
+    w.legL.rotation.x *= 0.7
+    w.legR.rotation.x *= 0.7
+    w.armL.rotation.x *= 0.7
+    w.armR.rotation.x *= 0.7
+    w.hips.position.y = 0.95
   }
 }
 
@@ -741,23 +777,19 @@ function clearCharacters() {
 }
 
 function attachCharacter(role, isPlayer, x, z) {
-  const root = makeRoleCharacter(role)
-  root.position.x = x
-  root.position.z = z
+  const root = makeColonialPerson(role)
+  root.position.set(x, 0, z)
   scene.add(root)
-  if (isPlayer) {
-    player = root
-    const animations = root.userData.animations || []
-    if (animations.length) {
-      mixer = new THREE.AnimationMixer(player)
-      const clip =
-        animations.find((a) => /walk|run|idle/i.test(a.name)) || animations[0]
-      playerActions = mixer.clipAction(clip)
-      playerActions.play()
-      playerActions.paused = true
-    }
-  }
+  if (isPlayer) player = root
   return root
+}
+
+function attachCrier() {
+  const c = makeColonialPerson('Pregonero')
+  c.position.set(-3.5, 0, 4.5)
+  c.rotation.y = Math.PI * 0.25
+  scene.add(c)
+  return c
 }
 
 function initThree() {
@@ -767,17 +799,17 @@ function initThree() {
   renderer.shadowMap.enabled = true
   renderer.outputColorSpace = THREE.SRGBColorSpace
   scene = new THREE.Scene()
-  scene.background = new THREE.Color(0x8eb0c8)
-  scene.fog = new THREE.Fog(0x8eb0c8, 55, 140)
+  scene.background = new THREE.Color(0x6a7368)
+  scene.fog = new THREE.Fog(0x6a7368, 40, 120)
   camera = new THREE.PerspectiveCamera(55, 1, 0.1, 260)
   clock = new THREE.Clock()
-  scene.add(new THREE.HemisphereLight(0xfff5e6, 0x3d4a28, 1.25))
-  const sun = new THREE.DirectionalLight(0xffe8c8, 1.15)
-  sun.position.set(30, 40, 18)
+  scene.add(new THREE.HemisphereLight(0xd8c8a8, 0x2a2218, 0.95))
+  const sun = new THREE.DirectionalLight(0xe8d0a8, 0.85)
+  sun.position.set(22, 28, 10)
   sun.castShadow = true
   sun.shadow.mapSize.set(1024, 1024)
   scene.add(sun)
-  scene.add(new THREE.AmbientLight(0xffffff, 0.35))
+  scene.add(new THREE.AmbientLight(0xb8a888, 0.28))
   worldRoot = new THREE.Group()
   interiorRoot = new THREE.Group()
   interiorRoot.visible = false
@@ -803,25 +835,32 @@ function tick() {
   requestAnimationFrame(tick)
   if (!renderer) return
   const dt = Math.min(clock.getDelta(), 0.05)
-  if (mixer) mixer.update(dt)
   if (state.running && $('game').classList.contains('active') && player) {
-    const speed = 5.8
+    const speed = 4.6
     const fromX = player.position.x
     const fromZ = player.position.z
     const toX = fromX + state.move.x * speed * dt
     const toZ = fromZ + state.move.z * speed * dt
-    const next = resolveMove(fromX, fromZ, toX, toZ, player.userData.radius || 0.45)
+    const next = resolveMove(fromX, fromZ, toX, toZ, player.userData.radius || 0.35)
     player.position.x = next.x
     player.position.z = next.z
-    if (state.move.x || state.move.z) {
-      player.rotation.y = Math.atan2(state.move.x, state.move.z) + Math.PI
-      if (playerActions) playerActions.paused = false
-    } else if (playerActions) {
-      playerActions.paused = true
+    const moving = !!(state.move.x || state.move.z)
+    if (moving) {
+      player.rotation.y = Math.atan2(state.move.x, state.move.z)
     }
+    updateWalk(player, dt, moving)
     updateDoors()
-    camera.position.set(player.position.x, 10, player.position.z + 12)
-    camera.lookAt(player.position.x, 1.5, player.position.z)
+    camera.position.set(player.position.x, 7.5, player.position.z + 9)
+    camera.lookAt(player.position.x, 1.2, player.position.z)
+  }
+  // parpadeo suave de llamas
+  if (worldRoot) {
+    worldRoot.traverse((c) => {
+      if (c.userData?.flame && c.material) {
+        c.material.emissiveIntensity = 1.1 + Math.sin(performance.now() / 120 + c.id) * 0.35
+        c.scale.setScalar(0.9 + Math.sin(performance.now() / 90 + c.id) * 0.15)
+      }
+    })
   }
   renderer.render(scene, camera)
 }
@@ -890,13 +929,14 @@ function startMatch() {
   clearCharacters()
   attachCharacter(state.you, true, 0, 14)
   attachCharacter(state.foe, false, 6, -5)
+  attachCrier()
   show('game')
   resize()
   clearInterval(state.timerId)
   state.timerId = setInterval(updateTimer, 250)
   updateTimer()
   crier(
-    `Sos ${state.you}. Plaza grande, casas y árboles. El ${state.foe} está quieto. Puerta brillante = ENTRAR.`,
+    `Sos ${state.you} (tamaño humano). Ciudad sucia tipo Salem, antorchas (no faroles). El ${state.foe} está quieto. Pregonero en la Plaza.`,
   )
 }
 
