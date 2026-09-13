@@ -124,13 +124,22 @@ async function loadModels() {
       'pavement-fountain.glb',
     ]),
   ]
-  for (const f of files) {
-    status.textContent = `Cargando ${f}…`
-    const gltf = await loader.loadAsync(`./models/${f}`)
-    templates[f] = gltf
+  const total = files.length
+  for (let i = 0; i < total; i++) {
+    const f = files[i]
+    const pct = Math.round((i / total) * 100)
+    status.textContent = `Cargando modelos… ${pct}% (${i}/${total}) — ${f}`
+    try {
+      const gltf = await loader.loadAsync(`./models/${f}`)
+      templates[f] = gltf
+    } catch (e) {
+      console.error(e)
+      status.textContent = `Error en ${f}. Tocá reintentar o reinstalá la APK.`
+      throw e
+    }
   }
   state.modelsReady = true
-  status.textContent = 'Listo'
+  status.textContent = 'Listo 100% — podés iniciar'
   $('btnStart').disabled = false
 }
 
@@ -671,6 +680,14 @@ function openNightPanel() {
 }
 
 $('btnStart').onclick = () => startMatch()
+$('btnRetryLoad')?.addEventListener('click', () => {
+  $('btnStart').disabled = true
+  $('loadStatus').textContent = 'Reintentando… 0%'
+  loadModels().catch((e) => {
+    $('loadStatus').textContent = 'Error cargando modelos — Reintentar'
+    console.error(e)
+  })
+})
 $('btnAgain').onclick = () => show('menu')
 $('btnMenu').onclick = () => {
   state.running = false
