@@ -19073,6 +19073,66 @@
       return new _SphereGeometry(data.radius, data.widthSegments, data.heightSegments, data.phiStart, data.phiLength, data.thetaStart, data.thetaLength);
     }
   };
+  var TorusGeometry = class _TorusGeometry extends BufferGeometry {
+    constructor(radius = 1, tube = 0.4, radialSegments = 12, tubularSegments = 48, arc = Math.PI * 2) {
+      super();
+      this.type = "TorusGeometry";
+      this.parameters = {
+        radius,
+        tube,
+        radialSegments,
+        tubularSegments,
+        arc
+      };
+      radialSegments = Math.floor(radialSegments);
+      tubularSegments = Math.floor(tubularSegments);
+      const indices = [];
+      const vertices = [];
+      const normals = [];
+      const uvs = [];
+      const center = new Vector3();
+      const vertex2 = new Vector3();
+      const normal = new Vector3();
+      for (let j = 0; j <= radialSegments; j++) {
+        for (let i = 0; i <= tubularSegments; i++) {
+          const u = i / tubularSegments * arc;
+          const v = j / radialSegments * Math.PI * 2;
+          vertex2.x = (radius + tube * Math.cos(v)) * Math.cos(u);
+          vertex2.y = (radius + tube * Math.cos(v)) * Math.sin(u);
+          vertex2.z = tube * Math.sin(v);
+          vertices.push(vertex2.x, vertex2.y, vertex2.z);
+          center.x = radius * Math.cos(u);
+          center.y = radius * Math.sin(u);
+          normal.subVectors(vertex2, center).normalize();
+          normals.push(normal.x, normal.y, normal.z);
+          uvs.push(i / tubularSegments);
+          uvs.push(j / radialSegments);
+        }
+      }
+      for (let j = 1; j <= radialSegments; j++) {
+        for (let i = 1; i <= tubularSegments; i++) {
+          const a = (tubularSegments + 1) * j + i - 1;
+          const b = (tubularSegments + 1) * (j - 1) + i - 1;
+          const c = (tubularSegments + 1) * (j - 1) + i;
+          const d = (tubularSegments + 1) * j + i;
+          indices.push(a, b, d);
+          indices.push(b, c, d);
+        }
+      }
+      this.setIndex(indices);
+      this.setAttribute("position", new Float32BufferAttribute(vertices, 3));
+      this.setAttribute("normal", new Float32BufferAttribute(normals, 3));
+      this.setAttribute("uv", new Float32BufferAttribute(uvs, 2));
+    }
+    copy(source) {
+      super.copy(source);
+      this.parameters = Object.assign({}, source.parameters);
+      return this;
+    }
+    static fromJSON(data) {
+      return new _TorusGeometry(data.radius, data.tube, data.radialSegments, data.tubularSegments, data.arc);
+    }
+  };
   var MeshStandardMaterial = class extends Material {
     constructor(parameters) {
       super();
@@ -24665,10 +24725,11 @@
   var TOWN_SCALE = 1;
   var WALL_W = 2;
   var BUILDING_DEFS = [
-    { id: "ayuntamiento", name: "Ayuntamiento", x: -24, z: -20, rotY: 0 },
-    { id: "monasterio", name: "Monasterio", x: 22, z: -22, rotY: Math.PI * 0.08 },
-    { id: "posada", name: "Posada", x: 6, z: 26, rotY: -Math.PI * 0.05 }
+    { id: "ayuntamiento", name: "Ayuntamiento", x: -28, z: -24, rotY: 0 },
+    { id: "monasterio", name: "Monasterio", x: 30, z: -28, rotY: Math.PI * 0.05 },
+    { id: "posada", name: "Posada", x: 8, z: 34, rotY: -Math.PI * 0.04 }
   ];
+  var PLAYABLE_ROLES = ["Alcalde", "Asesino", "Dama de compa\xF1\xEDa"];
   var VILLAGE_FILES = [
     "Wall_UnevenBrick_Straight.gltf",
     "Wall_UnevenBrick_Door_Flat.gltf",
@@ -24724,6 +24785,7 @@
   var templates = {};
   var mixer = null;
   var playerActions = null;
+  var mixers = [];
   function show(id) {
     for (const el of document.querySelectorAll(".screen")) el.classList.remove("active");
     $(id).classList.add("active");
@@ -24739,6 +24801,24 @@
   }
   function crier(t) {
     $("crier").textContent = t;
+  }
+  function makeGroundTex(cA, cB, contrast) {
+    const c = document.createElement("canvas");
+    c.width = c.height = 128;
+    const ctx = c.getContext("2d");
+    ctx.fillStyle = "#" + cA.toString(16).padStart(6, "0");
+    ctx.fillRect(0, 0, 128, 128);
+    for (let i = 0; i < 900; i++) {
+      const t = Math.random();
+      const col = t > contrast ? cA : cB;
+      ctx.fillStyle = "#" + col.toString(16).padStart(6, "0");
+      ctx.globalAlpha = 0.35 + Math.random() * 0.45;
+      ctx.fillRect(Math.random() * 128 | 0, Math.random() * 128 | 0, 1 + Math.random() * 3 | 0, 1 + Math.random() * 3 | 0);
+    }
+    ctx.globalAlpha = 1;
+    const tex = new CanvasTexture(c);
+    tex.colorSpace = SRGBColorSpace;
+    return tex;
   }
   function makeSign(text, x, y, z, rotY) {
     const g = new Group();
@@ -24977,12 +25057,9 @@
   }
   function buildExtraHouses() {
     const extras = [
-      { x: -40, z: -26, w: 2, d: 2, plaster: true },
-      { x: -44, z: 8, w: 2, d: 3, plaster: false },
-      { x: 40, z: -10, w: 3, d: 2, plaster: true },
-      { x: 38, z: 18, w: 2, d: 2, plaster: false },
-      { x: -16, z: 40, w: 2, d: 2, plaster: true },
-      { x: 26, z: 40, w: 3, d: 2, plaster: false }
+      { x: -55, z: -35, w: 2, d: 2, plaster: true },
+      { x: 55, z: -30, w: 2, d: 2, plaster: false },
+      { x: -50, z: 45, w: 2, d: 2, plaster: true }
     ];
     extras.forEach((e, i) => {
       buildHouse(e.x, e.z, {
@@ -24999,70 +25076,87 @@
     colliders = [];
     doorMeshes = [];
     while (worldRoot.children.length) worldRoot.remove(worldRoot.children[0]);
+    const dirtTex = makeGroundTex(5914672, 3811352, 0.55);
+    const grassTex = makeGroundTex(4876856, 2768920, 0.35);
+    const mudTex = makeGroundTex(3811352, 1708040, 0.7);
+    dirtTex.wrapS = dirtTex.wrapT = RepeatWrapping;
+    dirtTex.repeat.set(40, 40);
+    grassTex.wrapS = grassTex.wrapT = RepeatWrapping;
+    grassTex.repeat.set(8, 8);
+    mudTex.wrapS = mudTex.wrapT = RepeatWrapping;
+    mudTex.repeat.set(3, 3);
     const dirt = new Mesh(
       new PlaneGeometry(WORLD * 2, WORLD * 2),
-      new MeshStandardMaterial({ color: 4864552, roughness: 1 })
+      new MeshStandardMaterial({ map: dirtTex, roughness: 1 })
     );
     dirt.rotation.x = -Math.PI / 2;
     dirt.receiveShadow = true;
     worldRoot.add(dirt);
-    for (const [x, z, r, c] of [
-      [0, 0, 26, 4147758],
-      [-35, 15, 16, 3818792],
-      [30, -20, 18, 4542510],
-      [10, 40, 14, 3686950],
-      [-25, -35, 15, 3358754],
-      [20, 10, 8, 5914664],
-      [-15, 8, 6, 5388320]
+    for (const [x, z, r] of [
+      [0, 12, 22],
+      [-38, 18, 14],
+      [36, -16, 16],
+      [8, 42, 12],
+      [-28, -38, 14]
     ]) {
       const grass = new Mesh(
-        new CircleGeometry(r, 28),
-        new MeshStandardMaterial({ color: c, roughness: 1 })
+        new CircleGeometry(r, 32),
+        new MeshStandardMaterial({ map: grassTex, roughness: 1 })
       );
       grass.rotation.x = -Math.PI / 2;
-      grass.position.set(x, 0.02, z);
+      grass.position.set(x, 0.03, z);
       grass.receiveShadow = true;
       worldRoot.add(grass);
     }
     for (const [x, z, r] of [
-      [4, 3, 2.2],
-      [-7, -2, 1.6],
-      [12, 16, 1.8],
-      [-18, 6, 2.4]
+      [3, 2, 3.2],
+      [-8, -3, 2.4],
+      [14, 14, 2.8],
+      [-20, 5, 3.5],
+      [6, -10, 2.2]
     ]) {
       const mud = new Mesh(
-        new CircleGeometry(r, 16),
-        new MeshStandardMaterial({ color: 3023384, roughness: 0.85, metalness: 0.05 })
+        new CircleGeometry(r, 20),
+        new MeshStandardMaterial({ map: mudTex, roughness: 0.95, metalness: 0.02 })
       );
       mud.rotation.x = -Math.PI / 2;
-      mud.position.set(x, 0.03, z);
+      mud.position.set(x, 0.05, z);
       worldRoot.add(mud);
     }
     buildPlaza();
-    buildHouse(-24, -20, {
+    buildHouse(-28, -24, {
       id: "ayuntamiento",
       name: "Ayuntamiento",
-      w: 4,
-      d: 3,
+      w: 5,
+      d: 4,
       plaster: false,
       rotY: 0
     });
-    buildHouse(22, -22, {
+    if (templates["village/Stairs_Exterior_Straight.gltf"]) {
+      place("village/Stairs_Exterior_Straight.gltf", -28, 0, -24 + 5, 0, 1);
+    }
+    worldRoot.add(makeSign("AYUNTAMIENTO", -28, 4.2, -18, 0));
+    buildHouse(30, -28, {
       id: "monasterio",
       name: "Monasterio",
-      w: 3,
-      d: 4,
+      w: 4,
+      d: 5,
       plaster: true,
-      rotY: Math.PI * 0.08
+      rotY: Math.PI * 0.05
     });
-    buildHouse(6, 26, {
+    place("village/Prop_Chimney2.gltf", 32, 0, -30, 0, 1);
+    worldRoot.add(makeSign("MONASTERIO", 30, 4.5, -22, 0));
+    buildHouse(8, 34, {
       id: "posada",
       name: "Posada",
       w: 4,
       d: 3,
       plaster: false,
-      rotY: -Math.PI * 0.05
+      rotY: -Math.PI * 0.04
     });
+    place("village/Prop_Wagon.gltf", 14, 0, 36, 0.8, 1);
+    place("village/Prop_Crate.gltf", 12, 0, 32, 0.2, 1);
+    worldRoot.add(makeSign("POSADA", 8, 3.8, 38, 0));
     buildExtraHouses();
     scatterNature();
     worldRoot.visible = true;
@@ -25172,19 +25266,21 @@
         const name = `${c.name || ""} ${mat.name || ""}`.toLowerCase();
         if (/eye|teeth|cornea/.test(name)) return mat;
         if (/skin|face|head|hand|arm|neck|body/.test(name) && !/shirt|cloth|suit|pant|boot/.test(name)) {
-          mat.color = new Color(9263676);
-          mat.roughness = 0.8;
+          mat.color = new Color(role === "Dama de compa\xF1\xEDa" ? 12884600 : 10118464);
+          mat.roughness = 0.75;
           return mat;
         }
         if (role === "Alcalde") {
-          mat.color = new Color(/pant|leg|boot/.test(name) ? 1714232 : 2773120);
+          mat.color = new Color(/pant|leg|boot/.test(name) ? 1714232 : 2775696);
         } else if (role === "Pregonero") {
-          mat.color = new Color(/pant|leg|boot/.test(name) ? 3811352 : 6965800);
+          mat.color = new Color(/pant|leg|boot/.test(name) ? 3811352 : 8017200);
+        } else if (role === "Dama de compa\xF1\xEDa") {
+          mat.color = new Color(/pant|leg|boot/.test(name) ? 1706512 : 9052224);
         } else {
-          mat.color = new Color(2761248);
+          mat.color = new Color(1710102);
         }
         mat.metalness = 0.05;
-        mat.roughness = 0.85;
+        mat.roughness = 0.8;
         return mat;
       });
       c.material = Array.isArray(c.material) ? next : next[0];
@@ -25198,24 +25294,73 @@
     if (role === "Alcalde") {
       const hat = new Group();
       const top = new Mesh(
-        new CylinderGeometry(0.12, 0.13, 0.18, 12),
-        new MeshStandardMaterial({ color: 657932, roughness: 0.9 })
+        new CylinderGeometry(0.12, 0.13, 0.2, 12),
+        new MeshStandardMaterial({ color: 657932, roughness: 0.85 })
       );
-      top.position.y = 1.78;
+      top.position.y = 1.8;
       const brim = new Mesh(
-        new CylinderGeometry(0.22, 0.22, 0.03, 14),
-        new MeshStandardMaterial({ color: 328966, roughness: 0.95 })
+        new CylinderGeometry(0.24, 0.24, 0.035, 14),
+        new MeshStandardMaterial({ color: 328966, roughness: 0.9 })
       );
-      brim.position.y = 1.68;
-      hat.add(top, brim);
+      brim.position.y = 1.7;
+      const chain = new Mesh(
+        new TorusGeometry(0.16, 0.02, 8, 20),
+        new MeshStandardMaterial({ color: 13938487, metalness: 0.8, roughness: 0.3 })
+      );
+      chain.position.set(0, 1.35, 0.12);
+      chain.rotation.x = Math.PI / 2;
+      hat.add(top, brim, chain);
       root.add(hat);
     } else if (role === "Asesino") {
       const hood = new Mesh(
-        new SphereGeometry(0.18, 12, 10, 0, Math.PI * 2, 0, Math.PI / 1.7),
-        new MeshStandardMaterial({ color: 328965, side: DoubleSide, roughness: 1 })
+        new SphereGeometry(0.2, 12, 10, 0, Math.PI * 2, 0, Math.PI / 1.6),
+        new MeshStandardMaterial({ color: 657416, side: DoubleSide, roughness: 1 })
       );
-      hood.position.set(0, 1.65, 0);
-      root.add(hood);
+      hood.position.set(0, 1.68, 0);
+      const mask = new Mesh(
+        new BoxGeometry(0.22, 0.08, 0.04),
+        new MeshStandardMaterial({ color: 1118481, roughness: 0.6 })
+      );
+      mask.position.set(0, 1.55, 0.12);
+      const cloak = new Mesh(
+        new BoxGeometry(0.7, 0.95, 0.15),
+        new MeshStandardMaterial({ color: 789002, roughness: 0.95, side: DoubleSide })
+      );
+      cloak.position.set(0, 1.15, -0.2);
+      root.add(hood, mask, cloak);
+    } else if (role === "Dama de compa\xF1\xEDa") {
+      const dress = new Mesh(
+        new CylinderGeometry(0.28, 0.55, 1.05, 14),
+        new MeshStandardMaterial({ color: 9114935, roughness: 0.55, metalness: 0.08 })
+      );
+      dress.position.set(0, 0.85, 0);
+      const bodice = new Mesh(
+        new SphereGeometry(0.2, 12, 10),
+        new MeshStandardMaterial({ color: 12884600, roughness: 0.7 })
+      );
+      bodice.position.set(0, 1.38, 0.06);
+      bodice.scale.set(1.35, 0.75, 0.85);
+      const cleavage = new Mesh(
+        new SphereGeometry(0.09, 10, 10),
+        new MeshStandardMaterial({ color: 12884600, roughness: 0.65 })
+      );
+      cleavage.position.set(-0.07, 1.4, 0.16);
+      const cleavage2 = cleavage.clone();
+      cleavage2.position.x = 0.07;
+      const hair = new Mesh(
+        new SphereGeometry(0.2, 12, 12),
+        new MeshStandardMaterial({ color: 1706504, roughness: 0.8 })
+      );
+      hair.position.set(0, 1.72, -0.02);
+      hair.scale.set(1.15, 1.05, 1.2);
+      const earring = new Mesh(
+        new SphereGeometry(0.025, 8, 8),
+        new MeshStandardMaterial({ color: 16766720, metalness: 0.9, roughness: 0.25 })
+      );
+      earring.position.set(0.16, 1.58, 0.02);
+      const earring2 = earring.clone();
+      earring2.position.x = -0.16;
+      root.add(dress, bodice, cleavage, cleavage2, hair, earring, earring2);
     }
   }
   function makeRoleCharacter(role) {
@@ -25381,6 +25526,13 @@
     }
   }
   function clearCharacters() {
+    for (const m of mixers) {
+      try {
+        m.stopAllAction();
+      } catch {
+      }
+    }
+    mixers = [];
     const remove = [];
     scene.traverse((c) => {
       if (c.userData?.role) remove.push(c);
@@ -25392,21 +25544,46 @@
     mixer = null;
     playerActions = null;
   }
+  function bindCharacterAnims(root, isPlayer) {
+    const animations = root.userData.animations || [];
+    if (!animations.length) return;
+    const m = new AnimationMixer(root);
+    const walkClip = animations.find((a) => /walk/i.test(a.name)) || animations.find((a) => /run/i.test(a.name));
+    const idleClip = animations.find((a) => /idle/i.test(a.name)) || animations[0];
+    const actIdle = m.clipAction(idleClip);
+    actIdle.play();
+    actIdle.setEffectiveWeight(1);
+    let actWalk = null;
+    if (walkClip) {
+      actWalk = m.clipAction(walkClip);
+      actWalk.play();
+      actWalk.setEffectiveWeight(0);
+    }
+    root.userData.mixer = m;
+    root.userData.actIdle = actIdle;
+    root.userData.actWalk = actWalk;
+    mixers.push(m);
+    if (isPlayer) {
+      player = root;
+      mixer = m;
+      playerActions = actWalk || actIdle;
+    }
+  }
+  function setCharMoving(root, moving) {
+    const idle = root.userData.actIdle;
+    const walk = root.userData.actWalk;
+    if (!idle) return;
+    if (walk) {
+      walk.setEffectiveWeight(moving ? 1 : 0);
+      idle.setEffectiveWeight(moving ? 0 : 1);
+    }
+  }
   function attachCharacter(role, isPlayer, x, z) {
     const root = makeRoleCharacter(role);
     root.position.set(x, root.position.y || 0, z);
     scene.add(root);
-    if (isPlayer) {
-      player = root;
-      const animations = root.userData.animations || [];
-      if (animations.length) {
-        mixer = new AnimationMixer(player);
-        const clip = animations.find((a) => /walk|run/i.test(a.name)) || animations.find((a) => /idle/i.test(a.name)) || animations[0];
-        playerActions = mixer.clipAction(clip);
-        playerActions.play();
-        playerActions.paused = true;
-      }
-    }
+    bindCharacterAnims(root, isPlayer);
+    if (isPlayer) player = root;
     return root;
   }
   function attachCrier() {
@@ -25419,16 +25596,16 @@
   function setDayNight(night) {
     state.isNight = night;
     if (!scene) return;
-    scene.background = new Color(night ? 658450 : 4870728);
-    scene.fog = new Fog(night ? 658450 : 4870728, night ? 28 : 45, night ? 90 : 120);
+    scene.background = new Color(night ? 1712688 : 8888464);
+    scene.fog = new Fog(night ? 1712688 : 8888464, night ? 35 : 55, night ? 110 : 150);
     scene.traverse((o) => {
       if (o.isDirectionalLight) {
-        o.intensity = night ? 0.25 : 0.75;
-        o.color.setHex(night ? 8952251 : 14205072);
+        o.intensity = night ? 0.45 : 1.15;
+        o.color.setHex(night ? 11189213 : 16770752);
       }
-      if (o.isHemisphereLight) o.intensity = night ? 0.35 : 0.85;
-      if (o.isAmbientLight) o.intensity = night ? 0.12 : 0.25;
-      if (o.isPointLight) o.intensity = night ? 1.1 : 0.35;
+      if (o.isHemisphereLight) o.intensity = night ? 0.5 : 1.2;
+      if (o.isAmbientLight) o.intensity = night ? 0.22 : 0.45;
+      if (o.isPointLight) o.intensity = night ? 1.3 : 0.55;
     });
     $("sectorTag").textContent = night ? "Salem \xB7 Noche" : "Salem \xB7 D\xEDa";
   }
@@ -25439,17 +25616,17 @@
     renderer.shadowMap.enabled = true;
     renderer.outputColorSpace = SRGBColorSpace;
     scene = new Scene();
-    scene.background = new Color(4870728);
-    scene.fog = new Fog(4870728, 45, 120);
+    scene.background = new Color(8888464);
+    scene.fog = new Fog(8888464, 55, 150);
     camera = new PerspectiveCamera(50, 1, 0.1, 280);
     clock = new Clock();
-    scene.add(new HemisphereLight(12101768, 1709328, 0.85));
-    const sun = new DirectionalLight(14205072, 0.75);
+    scene.add(new HemisphereLight(16773336, 3820072, 1.2));
+    const sun = new DirectionalLight(16770752, 1.15);
     sun.position.set(22, 28, 10);
     sun.castShadow = true;
     sun.shadow.mapSize.set(1024, 1024);
     scene.add(sun);
-    scene.add(new AmbientLight(9075304, 0.25));
+    scene.add(new AmbientLight(14207144, 0.45));
     worldRoot = new Group();
     interiorRoot = new Group();
     interiorRoot.visible = false;
@@ -25473,7 +25650,7 @@
     requestAnimationFrame(tick);
     if (!renderer) return;
     const dt = Math.min(clock.getDelta(), 0.05);
-    if (mixer) mixer.update(dt);
+    for (const m of mixers) m.update(dt);
     if (state.running && $("game").classList.contains("active") && player) {
       const speed = 4.2;
       const fromX = player.position.x;
@@ -25484,12 +25661,8 @@
       player.position.x = next.x;
       player.position.z = next.z;
       const moving = !!(state.move.x || state.move.z);
-      if (moving) {
-        player.rotation.y = Math.atan2(state.move.x, state.move.z);
-        if (playerActions) playerActions.paused = false;
-      } else if (playerActions) {
-        playerActions.paused = true;
-      }
+      if (moving) player.rotation.y = Math.atan2(state.move.x, state.move.z);
+      setCharMoving(player, moving);
       if (player.userData.walk) updateWalk(player, dt, moving);
       updateDoors();
       if (state.nearDoor && !state.nearDoor.locked) {
@@ -25607,8 +25780,9 @@
   function startMatch() {
     if (!state.modelsReady) return toast("Todav\xEDa cargan los modelos");
     if (!renderer) initThree();
-    state.you = Math.random() < 0.5 ? "Alcalde" : "Asesino";
-    state.foe = state.you === "Alcalde" ? "Asesino" : "Alcalde";
+    state.you = PLAYABLE_ROLES[Math.floor(Math.random() * PLAYABLE_ROLES.length)];
+    const others = PLAYABLE_ROLES.filter((r) => r !== state.you);
+    state.foe = others[Math.floor(Math.random() * others.length)];
     state.youHp = 100;
     state.foeHp = 100;
     state.youActions = 10;
@@ -25624,7 +25798,7 @@
     setDayNight(false);
     clearCharacters();
     attachCharacter(state.you, true, 0, 14);
-    attachCharacter(state.foe, false, 6, -5);
+    attachCharacter(state.foe, false, 8, -6);
     attachCrier();
     show("game");
     resize();
@@ -25632,7 +25806,7 @@
     state.timerId = setInterval(updateTimer, 250);
     updateTimer();
     crier(
-      `D\xEDa: puertas cerradas. Noche: se abren (acercate y entr\xE1s solo). Pellizc\xE1 para alejar la c\xE1mara. Sos ${state.you}.`
+      `Sos ${state.you}. Rival: ${state.foe} (quieto, ya no en T). D\xEDa=puertas cerradas. M\xE1s luz, barro y pasto.`
     );
   }
   function updateTimer() {
@@ -25720,6 +25894,16 @@
         state.revealedMayor = true;
         state.youActions += 10;
         crier("\xA1El Alcalde se revela!");
+      });
+    }
+    if (state.you === "Dama de compa\xF1\xEDa") {
+      mk("Llamar la atenci\xF3n (Plaza)", () => {
+        if (state.inside || Math.hypot(player.position.x, player.position.z) > 14) {
+          toast("Mejor en la Plaza");
+          return;
+        }
+        crier("La Dama llama todas las miradas en la Plaza\u2026");
+        toast("Todos te miran");
       });
     }
     $("panel").classList.remove("hidden");

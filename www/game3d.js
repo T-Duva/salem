@@ -9,10 +9,11 @@ const TOWN_SCALE = 1
 const WALL_W = 2
 
 const BUILDING_DEFS = [
-  { id: 'ayuntamiento', name: 'Ayuntamiento', x: -24, z: -20, rotY: 0 },
-  { id: 'monasterio', name: 'Monasterio', x: 22, z: -22, rotY: Math.PI * 0.08 },
-  { id: 'posada', name: 'Posada', x: 6, z: 26, rotY: -Math.PI * 0.05 },
+  { id: 'ayuntamiento', name: 'Ayuntamiento', x: -28, z: -24, rotY: 0 },
+  { id: 'monasterio', name: 'Monasterio', x: 30, z: -28, rotY: Math.PI * 0.05 },
+  { id: 'posada', name: 'Posada', x: 8, z: 34, rotY: -Math.PI * 0.04 },
 ]
+const PLAYABLE_ROLES = ['Alcalde', 'Asesino', 'Dama de compañía']
 
 const VILLAGE_FILES = [
   'Wall_UnevenBrick_Straight.gltf',
@@ -65,6 +66,7 @@ let doorMeshes = []
 let templates = {}
 let mixer = null
 let playerActions = null
+let mixers = []
 
 function show(id) {
   for (const el of document.querySelectorAll('.screen')) el.classList.remove('active')
@@ -83,6 +85,25 @@ function toast(msg) {
 
 function crier(t) {
   $('crier').textContent = t
+}
+
+function makeGroundTex(cA, cB, contrast) {
+  const c = document.createElement('canvas')
+  c.width = c.height = 128
+  const ctx = c.getContext('2d')
+  ctx.fillStyle = '#' + cA.toString(16).padStart(6, '0')
+  ctx.fillRect(0, 0, 128, 128)
+  for (let i = 0; i < 900; i++) {
+    const t = Math.random()
+    const col = t > contrast ? cA : cB
+    ctx.fillStyle = '#' + col.toString(16).padStart(6, '0')
+    ctx.globalAlpha = 0.35 + Math.random() * 0.45
+    ctx.fillRect((Math.random() * 128) | 0, (Math.random() * 128) | 0, 1 + (Math.random() * 3) | 0, 1 + (Math.random() * 3) | 0)
+  }
+  ctx.globalAlpha = 1
+  const tex = new THREE.CanvasTexture(c)
+  tex.colorSpace = THREE.SRGBColorSpace
+  return tex
 }
 
 function makeSign(text, x, y, z, rotY) {
@@ -340,12 +361,9 @@ function scatterNature() {
 function buildExtraHouses() {
   // casas de relleno para sensación de ciudad
   const extras = [
-    { x: -40, z: -26, w: 2, d: 2, plaster: true },
-    { x: -44, z: 8, w: 2, d: 3, plaster: false },
-    { x: 40, z: -10, w: 3, d: 2, plaster: true },
-    { x: 38, z: 18, w: 2, d: 2, plaster: false },
-    { x: -16, z: 40, w: 2, d: 2, plaster: true },
-    { x: 26, z: 40, w: 3, d: 2, plaster: false },
+    { x: -55, z: -35, w: 2, d: 2, plaster: true },
+    { x: 55, z: -30, w: 2, d: 2, plaster: false },
+    { x: -50, z: 45, w: 2, d: 2, plaster: true },
   ]
   extras.forEach((e, i) => {
     buildHouse(e.x, e.z, {
@@ -364,74 +382,90 @@ function buildExterior() {
   doorMeshes = []
   while (worldRoot.children.length) worldRoot.remove(worldRoot.children[0])
 
-  // suelo sucio tipo Salem: barro / tierra oscura + pasto seco
+  const dirtTex = makeGroundTex(0x5a4030, 0x3a2818, 0.55)
+  const grassTex = makeGroundTex(0x4a6a38, 0x2a4018, 0.35)
+  const mudTex = makeGroundTex(0x3a2818, 0x1a1008, 0.7)
+  dirtTex.wrapS = dirtTex.wrapT = THREE.RepeatWrapping
+  dirtTex.repeat.set(40, 40)
+  grassTex.wrapS = grassTex.wrapT = THREE.RepeatWrapping
+  grassTex.repeat.set(8, 8)
+  mudTex.wrapS = mudTex.wrapT = THREE.RepeatWrapping
+  mudTex.repeat.set(3, 3)
   const dirt = new THREE.Mesh(
     new THREE.PlaneGeometry(WORLD * 2, WORLD * 2),
-    new THREE.MeshStandardMaterial({ color: 0x4a3a28, roughness: 1 }),
+    new THREE.MeshStandardMaterial({ map: dirtTex, roughness: 1 }),
   )
   dirt.rotation.x = -Math.PI / 2
   dirt.receiveShadow = true
   worldRoot.add(dirt)
-
-  for (const [x, z, r, c] of [
-    [0, 0, 26, 0x3f4a2e],
-    [-35, 15, 16, 0x3a4528],
-    [30, -20, 18, 0x45502e],
-    [10, 40, 14, 0x384226],
-    [-25, -35, 15, 0x334022],
-    [20, 10, 8, 0x5a4028],
-    [-15, 8, 6, 0x523820],
+  for (const [x, z, r] of [
+    [0, 12, 22],
+    [-38, 18, 14],
+    [36, -16, 16],
+    [8, 42, 12],
+    [-28, -38, 14],
   ]) {
     const grass = new THREE.Mesh(
-      new THREE.CircleGeometry(r, 28),
-      new THREE.MeshStandardMaterial({ color: c, roughness: 1 }),
+      new THREE.CircleGeometry(r, 32),
+      new THREE.MeshStandardMaterial({ map: grassTex, roughness: 1 }),
     )
     grass.rotation.x = -Math.PI / 2
-    grass.position.set(x, 0.02, z)
+    grass.position.set(x, 0.03, z)
     grass.receiveShadow = true
     worldRoot.add(grass)
   }
-  // charcos de barro
   for (const [x, z, r] of [
-    [4, 3, 2.2],
-    [-7, -2, 1.6],
-    [12, 16, 1.8],
-    [-18, 6, 2.4],
+    [3, 2, 3.2],
+    [-8, -3, 2.4],
+    [14, 14, 2.8],
+    [-20, 5, 3.5],
+    [6, -10, 2.2],
   ]) {
     const mud = new THREE.Mesh(
-      new THREE.CircleGeometry(r, 16),
-      new THREE.MeshStandardMaterial({ color: 0x2e2218, roughness: 0.85, metalness: 0.05 }),
+      new THREE.CircleGeometry(r, 20),
+      new THREE.MeshStandardMaterial({ map: mudTex, roughness: 0.95, metalness: 0.02 }),
     )
     mud.rotation.x = -Math.PI / 2
-    mud.position.set(x, 0.03, z)
+    mud.position.set(x, 0.05, z)
     worldRoot.add(mud)
   }
 
   buildPlaza()
-  buildHouse(-24, -20, {
+  buildHouse(-28, -24, {
     id: 'ayuntamiento',
     name: 'Ayuntamiento',
-    w: 4,
-    d: 3,
+    w: 5,
+    d: 4,
     plaster: false,
     rotY: 0,
   })
-  buildHouse(22, -22, {
+  if (templates['village/Stairs_Exterior_Straight.gltf']) {
+    place('village/Stairs_Exterior_Straight.gltf', -28, 0, -24 + 5, 0, 1)
+  }
+  worldRoot.add(makeSign('AYUNTAMIENTO', -28, 4.2, -18, 0))
+
+  buildHouse(30, -28, {
     id: 'monasterio',
     name: 'Monasterio',
-    w: 3,
-    d: 4,
+    w: 4,
+    d: 5,
     plaster: true,
-    rotY: Math.PI * 0.08,
+    rotY: Math.PI * 0.05,
   })
-  buildHouse(6, 26, {
+  place('village/Prop_Chimney2.gltf', 32, 0, -30, 0, 1)
+  worldRoot.add(makeSign('MONASTERIO', 30, 4.5, -22, 0))
+
+  buildHouse(8, 34, {
     id: 'posada',
     name: 'Posada',
     w: 4,
     d: 3,
     plaster: false,
-    rotY: -Math.PI * 0.05,
+    rotY: -Math.PI * 0.04,
   })
+  place('village/Prop_Wagon.gltf', 14, 0, 36, 0.8, 1)
+  place('village/Prop_Crate.gltf', 12, 0, 32, 0.2, 1)
+  worldRoot.add(makeSign('POSADA', 8, 3.8, 38, 0))
   buildExtraHouses()
   scatterNature()
 
@@ -552,24 +586,25 @@ function applyRoleLook(root, role) {
       const name = `${c.name || ''} ${mat.name || ''}`.toLowerCase()
       if (/eye|teeth|cornea/.test(name)) return mat
       if (/skin|face|head|hand|arm|neck|body/.test(name) && !/shirt|cloth|suit|pant|boot/.test(name)) {
-        mat.color = new THREE.Color(0x8d5a3c)
-        mat.roughness = 0.8
+        mat.color = new THREE.Color(role === 'Dama de compañía' ? 0xc49a78 : 0x9a6540)
+        mat.roughness = 0.75
         return mat
       }
       if (role === 'Alcalde') {
-        mat.color = new THREE.Color(/pant|leg|boot/.test(name) ? 0x1a2838 : 0x2a5080)
+        mat.color = new THREE.Color(/pant|leg|boot/.test(name) ? 0x1a2838 : 0x2a5a90)
       } else if (role === 'Pregonero') {
-        mat.color = new THREE.Color(/pant|leg|boot/.test(name) ? 0x3a2818 : 0x6a4a28)
+        mat.color = new THREE.Color(/pant|leg|boot/.test(name) ? 0x3a2818 : 0x7a5530)
+      } else if (role === 'Dama de compañía') {
+        mat.color = new THREE.Color(/pant|leg|boot/.test(name) ? 0x1a0a10 : 0x8a2040)
       } else {
-        mat.color = new THREE.Color(0x2a2220)
+        mat.color = new THREE.Color(0x1a1816)
       }
       mat.metalness = 0.05
-      mat.roughness = 0.85
+      mat.roughness = 0.8
       return mat
     })
     c.material = Array.isArray(c.material) ? next : next[0]
   })
-  // sin armas visibles
   const kill = []
   root.traverse((c) => {
     const n = `${c.name || ''}`.toLowerCase()
@@ -580,24 +615,74 @@ function applyRoleLook(root, role) {
   if (role === 'Alcalde') {
     const hat = new THREE.Group()
     const top = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.12, 0.13, 0.18, 12),
-      new THREE.MeshStandardMaterial({ color: 0x0a0a0c, roughness: 0.9 }),
+      new THREE.CylinderGeometry(0.12, 0.13, 0.2, 12),
+      new THREE.MeshStandardMaterial({ color: 0x0a0a0c, roughness: 0.85 }),
     )
-    top.position.y = 1.78
+    top.position.y = 1.8
     const brim = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.22, 0.22, 0.03, 14),
-      new THREE.MeshStandardMaterial({ color: 0x050506, roughness: 0.95 }),
+      new THREE.CylinderGeometry(0.24, 0.24, 0.035, 14),
+      new THREE.MeshStandardMaterial({ color: 0x050506, roughness: 0.9 }),
     )
-    brim.position.y = 1.68
-    hat.add(top, brim)
+    brim.position.y = 1.7
+    const chain = new THREE.Mesh(
+      new THREE.TorusGeometry(0.16, 0.02, 8, 20),
+      new THREE.MeshStandardMaterial({ color: 0xd4af37, metalness: 0.8, roughness: 0.3 }),
+    )
+    chain.position.set(0, 1.35, 0.12)
+    chain.rotation.x = Math.PI / 2
+    hat.add(top, brim, chain)
     root.add(hat)
   } else if (role === 'Asesino') {
     const hood = new THREE.Mesh(
-      new THREE.SphereGeometry(0.18, 12, 10, 0, Math.PI * 2, 0, Math.PI / 1.7),
-      new THREE.MeshStandardMaterial({ color: 0x050505, side: THREE.DoubleSide, roughness: 1 }),
+      new THREE.SphereGeometry(0.2, 12, 10, 0, Math.PI * 2, 0, Math.PI / 1.6),
+      new THREE.MeshStandardMaterial({ color: 0x0a0808, side: THREE.DoubleSide, roughness: 1 }),
     )
-    hood.position.set(0, 1.65, 0)
-    root.add(hood)
+    hood.position.set(0, 1.68, 0)
+    const mask = new THREE.Mesh(
+      new THREE.BoxGeometry(0.22, 0.08, 0.04),
+      new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.6 }),
+    )
+    mask.position.set(0, 1.55, 0.12)
+    const cloak = new THREE.Mesh(
+      new THREE.BoxGeometry(0.7, 0.95, 0.15),
+      new THREE.MeshStandardMaterial({ color: 0x0c0a0a, roughness: 0.95, side: THREE.DoubleSide }),
+    )
+    cloak.position.set(0, 1.15, -0.2)
+    root.add(hood, mask, cloak)
+  } else if (role === 'Dama de compañía') {
+    // look adulto llamativo: vestido abierto, escote, pelo
+    const dress = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.28, 0.55, 1.05, 14),
+      new THREE.MeshStandardMaterial({ color: 0x8b1537, roughness: 0.55, metalness: 0.08 }),
+    )
+    dress.position.set(0, 0.85, 0)
+    const bodice = new THREE.Mesh(
+      new THREE.SphereGeometry(0.2, 12, 10),
+      new THREE.MeshStandardMaterial({ color: 0xc49a78, roughness: 0.7 }),
+    )
+    bodice.position.set(0, 1.38, 0.06)
+    bodice.scale.set(1.35, 0.75, 0.85)
+    const cleavage = new THREE.Mesh(
+      new THREE.SphereGeometry(0.09, 10, 10),
+      new THREE.MeshStandardMaterial({ color: 0xc49a78, roughness: 0.65 }),
+    )
+    cleavage.position.set(-0.07, 1.4, 0.16)
+    const cleavage2 = cleavage.clone()
+    cleavage2.position.x = 0.07
+    const hair = new THREE.Mesh(
+      new THREE.SphereGeometry(0.2, 12, 12),
+      new THREE.MeshStandardMaterial({ color: 0x1a0a08, roughness: 0.8 }),
+    )
+    hair.position.set(0, 1.72, -0.02)
+    hair.scale.set(1.15, 1.05, 1.2)
+    const earring = new THREE.Mesh(
+      new THREE.SphereGeometry(0.025, 8, 8),
+      new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.9, roughness: 0.25 }),
+    )
+    earring.position.set(0.16, 1.58, 0.02)
+    const earring2 = earring.clone()
+    earring2.position.x = -0.16
+    root.add(dress, bodice, cleavage, cleavage2, hair, earring, earring2)
   }
 }
 
@@ -778,6 +863,10 @@ function updateWalk(root, dt, moving) {
 }
 
 function clearCharacters() {
+  for (const m of mixers) {
+    try { m.stopAllAction() } catch {}
+  }
+  mixers = []
   const remove = []
   scene.traverse((c) => {
     if (c.userData?.role) remove.push(c)
@@ -790,24 +879,48 @@ function clearCharacters() {
   playerActions = null
 }
 
+function bindCharacterAnims(root, isPlayer) {
+  const animations = root.userData.animations || []
+  if (!animations.length) return
+  const m = new THREE.AnimationMixer(root)
+  const walkClip = animations.find((a) => /walk/i.test(a.name)) || animations.find((a) => /run/i.test(a.name))
+  const idleClip = animations.find((a) => /idle/i.test(a.name)) || animations[0]
+  const actIdle = m.clipAction(idleClip)
+  actIdle.play()
+  actIdle.setEffectiveWeight(1)
+  let actWalk = null
+  if (walkClip) {
+    actWalk = m.clipAction(walkClip)
+    actWalk.play()
+    actWalk.setEffectiveWeight(0)
+  }
+  root.userData.mixer = m
+  root.userData.actIdle = actIdle
+  root.userData.actWalk = actWalk
+  mixers.push(m)
+  if (isPlayer) {
+    player = root
+    mixer = m
+    playerActions = actWalk || actIdle
+  }
+}
+
+function setCharMoving(root, moving) {
+  const idle = root.userData.actIdle
+  const walk = root.userData.actWalk
+  if (!idle) return
+  if (walk) {
+    walk.setEffectiveWeight(moving ? 1 : 0)
+    idle.setEffectiveWeight(moving ? 0 : 1)
+  }
+}
+
 function attachCharacter(role, isPlayer, x, z) {
   const root = makeRoleCharacter(role)
   root.position.set(x, root.position.y || 0, z)
   scene.add(root)
-  if (isPlayer) {
-    player = root
-    const animations = root.userData.animations || []
-    if (animations.length) {
-      mixer = new THREE.AnimationMixer(player)
-      const clip =
-        animations.find((a) => /walk|run/i.test(a.name)) ||
-        animations.find((a) => /idle/i.test(a.name)) ||
-        animations[0]
-      playerActions = mixer.clipAction(clip)
-      playerActions.play()
-      playerActions.paused = true
-    }
-  }
+  bindCharacterAnims(root, isPlayer)
+  if (isPlayer) player = root
   return root
 }
 
@@ -822,16 +935,16 @@ function attachCrier() {
 function setDayNight(night) {
   state.isNight = night
   if (!scene) return
-  scene.background = new THREE.Color(night ? 0x0a0c12 : 0x4a5248)
-  scene.fog = new THREE.Fog(night ? 0x0a0c12 : 0x4a5248, night ? 28 : 45, night ? 90 : 120)
+  scene.background = new THREE.Color(night ? 0x1a2230 : 0x87a090)
+  scene.fog = new THREE.Fog(night ? 0x1a2230 : 0x87a090, night ? 35 : 55, night ? 110 : 150)
   scene.traverse((o) => {
     if (o.isDirectionalLight) {
-      o.intensity = night ? 0.25 : 0.75
-      o.color.setHex(night ? 0x8899bb : 0xd8c090)
+      o.intensity = night ? 0.45 : 1.15
+      o.color.setHex(night ? 0xaabbdd : 0xffe6c0)
     }
-    if (o.isHemisphereLight) o.intensity = night ? 0.35 : 0.85
-    if (o.isAmbientLight) o.intensity = night ? 0.12 : 0.25
-    if (o.isPointLight) o.intensity = night ? 1.1 : 0.35
+    if (o.isHemisphereLight) o.intensity = night ? 0.5 : 1.2
+    if (o.isAmbientLight) o.intensity = night ? 0.22 : 0.45
+    if (o.isPointLight) o.intensity = night ? 1.3 : 0.55
   })
   $('sectorTag').textContent = night ? 'Salem · Noche' : 'Salem · Día'
 }
@@ -844,17 +957,17 @@ function initThree() {
   renderer.shadowMap.enabled = true
   renderer.outputColorSpace = THREE.SRGBColorSpace
   scene = new THREE.Scene()
-  scene.background = new THREE.Color(0x4a5248)
-  scene.fog = new THREE.Fog(0x4a5248, 45, 120)
+  scene.background = new THREE.Color(0x87a090)
+  scene.fog = new THREE.Fog(0x87a090, 55, 150)
   camera = new THREE.PerspectiveCamera(50, 1, 0.1, 280)
   clock = new THREE.Clock()
-  scene.add(new THREE.HemisphereLight(0xb8a888, 0x1a1510, 0.85))
-  const sun = new THREE.DirectionalLight(0xd8c090, 0.75)
+  scene.add(new THREE.HemisphereLight(0xfff0d8, 0x3a4a28, 1.2))
+  const sun = new THREE.DirectionalLight(0xffe6c0, 1.15)
   sun.position.set(22, 28, 10)
   sun.castShadow = true
   sun.shadow.mapSize.set(1024, 1024)
   scene.add(sun)
-  scene.add(new THREE.AmbientLight(0x8a7a68, 0.25))
+  scene.add(new THREE.AmbientLight(0xd8c8a8, 0.45))
   worldRoot = new THREE.Group()
   interiorRoot = new THREE.Group()
   interiorRoot.visible = false
@@ -880,7 +993,7 @@ function tick() {
   requestAnimationFrame(tick)
   if (!renderer) return
   const dt = Math.min(clock.getDelta(), 0.05)
-  if (mixer) mixer.update(dt)
+  for (const m of mixers) m.update(dt)
   if (state.running && $('game').classList.contains('active') && player) {
     const speed = 4.2
     const fromX = player.position.x
@@ -891,12 +1004,8 @@ function tick() {
     player.position.x = next.x
     player.position.z = next.z
     const moving = !!(state.move.x || state.move.z)
-    if (moving) {
-      player.rotation.y = Math.atan2(state.move.x, state.move.z)
-      if (playerActions) playerActions.paused = false
-    } else if (playerActions) {
-      playerActions.paused = true
-    }
+    if (moving) player.rotation.y = Math.atan2(state.move.x, state.move.z)
+    setCharMoving(player, moving)
     if (player.userData.walk) updateWalk(player, dt, moving)
     updateDoors()
     // entrada automática (sin botón): cerca de puerta abierta
@@ -1021,8 +1130,9 @@ function setupJoystick() {
 function startMatch() {
   if (!state.modelsReady) return toast('Todavía cargan los modelos')
   if (!renderer) initThree()
-  state.you = Math.random() < 0.5 ? 'Alcalde' : 'Asesino'
-  state.foe = state.you === 'Alcalde' ? 'Asesino' : 'Alcalde'
+  state.you = PLAYABLE_ROLES[Math.floor(Math.random() * PLAYABLE_ROLES.length)]
+  const others = PLAYABLE_ROLES.filter((r) => r !== state.you)
+  state.foe = others[Math.floor(Math.random() * others.length)]
   state.youHp = 100
   state.foeHp = 100
   state.youActions = 10
@@ -1038,7 +1148,7 @@ function startMatch() {
   setDayNight(false)
   clearCharacters()
   attachCharacter(state.you, true, 0, 14)
-  attachCharacter(state.foe, false, 6, -5)
+  attachCharacter(state.foe, false, 8, -6)
   attachCrier()
   show('game')
   resize()
@@ -1046,7 +1156,7 @@ function startMatch() {
   state.timerId = setInterval(updateTimer, 250)
   updateTimer()
   crier(
-    `Día: puertas cerradas. Noche: se abren (acercate y entrás solo). Pellizcá para alejar la cámara. Sos ${state.you}.`,
+    `Sos ${state.you}. Rival: ${state.foe} (quieto, ya no en T). Día=puertas cerradas. Más luz, barro y pasto.`,
   )
 }
 
@@ -1137,6 +1247,16 @@ function openNightPanel() {
       state.revealedMayor = true
       state.youActions += 10
       crier('¡El Alcalde se revela!')
+    })
+  }
+  if (state.you === 'Dama de compañía') {
+    mk('Llamar la atención (Plaza)', () => {
+      if (state.inside || Math.hypot(player.position.x, player.position.z) > 14) {
+        toast('Mejor en la Plaza')
+        return
+      }
+      crier('La Dama llama todas las miradas en la Plaza…')
+      toast('Todos te miran')
     })
   }
   $('panel').classList.remove('hidden')
