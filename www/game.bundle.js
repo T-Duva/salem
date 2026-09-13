@@ -25732,7 +25732,7 @@
     state.timerId = setInterval(updateTimer, 250);
     updateTimer();
     crier(
-      `Sos ${state.you} (modelo KayKit animado). Rival: ${state.foe}. Idle/caminar reales \u2014 sin T.`
+      `Sos ${state.you}. Rival: ${state.foe} (quieto). D\xEDa/noche y puertas como antes.`
     );
   }
   function updateTimer() {

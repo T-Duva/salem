@@ -1200,7 +1200,7 @@ function startMatch() {
   state.timerId = setInterval(updateTimer, 250)
   updateTimer()
   crier(
-    `Sos ${state.you} (modelo KayKit animado). Rival: ${state.foe}. Idle/caminar reales — sin T.`,
+    `Sos ${state.you}. Rival: ${state.foe} (quieto). Día/noche y puertas como antes.`,
   )
 }
 
