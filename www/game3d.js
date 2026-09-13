@@ -5,61 +5,39 @@ import { clone as skeletonClone } from 'three/addons/utils/SkeletonUtils.js'
 const MATCH_MS = 30 * 60 * 1000
 const WORLD = 180
 const $ = (id) => document.getElementById(id)
-const TOWN_SCALE = 2.6
+const TOWN_SCALE = 1
+const WALL_W = 2
 
 const BUILDING_DEFS = [
-  { id: 'ayuntamiento', name: 'Ayuntamiento', x: -28, z: -22, rotY: 0 },
-  { id: 'monasterio', name: 'Monasterio', x: 26, z: -26, rotY: Math.PI * 0.08 },
-  { id: 'posada', name: 'Posada', x: 8, z: 30, rotY: -Math.PI * 0.05 },
+  { id: 'ayuntamiento', name: 'Ayuntamiento', x: -24, z: -20, rotY: 0 },
+  { id: 'monasterio', name: 'Monasterio', x: 22, z: -22, rotY: Math.PI * 0.08 },
+  { id: 'posada', name: 'Posada', x: 6, z: 26, rotY: -Math.PI * 0.05 },
 ]
 
-const TOWN_FILES = [
-  'wall.glb',
-  'wall-wood.glb',
-  'wall-door.glb',
-  'wall-wood-door.glb',
-  'wall-window-shutters.glb',
-  'wall-wood-window-shutters.glb',
-  'wall-window-glass.glb',
-  'wall-half.glb',
-  'wall-corner.glb',
-  'wall-wood-corner.glb',
-  'wall-doorway-square.glb',
-  'wall-wood-doorway-square.glb',
-  'wall-arch.glb',
-  'roof.glb',
-  'roof-gable.glb',
-  'roof-corner.glb',
-  'roof-window.glb',
-  'roof-point.glb',
-  'chimney.glb',
-  'chimney-top.glb',
-  'fountain-round.glb',
-  'fountain-round-detail.glb',
-  'fountain-square.glb',
-  'tree.glb',
-  'tree-high.glb',
-  'tree-crooked.glb',
-  'tree-high-round.glb',
-  'hedge.glb',
-  'hedge-large.glb',
-  'hedge-gate.glb',
-  'road.glb',
-  'road-corner.glb',
-  'road-bend.glb',
-  'stall.glb',
-  'stall-red.glb',
-  'stall-green.glb',
-  'cart.glb',
-  'fence.glb',
-  'fence-gate.glb',
-  'rock-large.glb',
-  'rock-wide.glb',
-  'stairs-wood.glb',
-  'planks.glb',
-  'banner-red.glb',
-  'banner-green.glb',
+const VILLAGE_FILES = [
+  'Wall_UnevenBrick_Straight.gltf',
+  'Wall_UnevenBrick_Door_Flat.gltf',
+  'Wall_UnevenBrick_Window_Wide_Flat.gltf',
+  'Wall_Plaster_Straight.gltf',
+  'Wall_Plaster_Door_Round.gltf',
+  'Wall_Plaster_Window_Wide_Round.gltf',
+  'Corner_Exterior_Wood.gltf',
+  'Corner_Exterior_Brick.gltf',
+  'Roof_RoundTiles_4x4.gltf',
+  'Roof_RoundTiles_6x6.gltf',
+  'Roof_Front_Brick4.gltf',
+  'Prop_Chimney.gltf',
+  'Prop_Chimney2.gltf',
+  'Door_1_Flat.gltf',
+  'Floor_UnevenBrick.gltf',
+  'Prop_WoodenFence_Single.gltf',
+  'Prop_Wagon.gltf',
+  'Prop_Crate.gltf',
+  'Prop_Vine1.gltf',
+  'Prop_Vine2.gltf',
+  'Stairs_Exterior_Straight.gltf',
 ]
+const NATURE_FILES = ['tree.glb', 'tree-high.glb', 'tree-crooked.glb', 'tree-high-round.glb', 'rock-wide.glb']
 
 const state = {
   running: false,
@@ -147,7 +125,8 @@ async function loadModels() {
   const status = $('loadStatus')
   const jobs = [
     { key: 'xbot.glb', url: './models/xbot.glb' },
-    ...TOWN_FILES.map((f) => ({ key: `town/${f}`, url: `./models/town/${f}` })),
+    ...VILLAGE_FILES.map((f) => ({ key: `village/${f}`, url: `./models/village/${f}` })),
+    ...NATURE_FILES.map((f) => ({ key: `town/${f}`, url: `./models/town/${f}` })),
   ]
   const total = jobs.length
   for (let i = 0; i < total; i++) {
@@ -185,10 +164,9 @@ function cloneTemplate(key) {
         for (const m of mats) {
           if (!m) continue
           if (m.map) m.map.colorSpace = THREE.SRGBColorSpace
-          // ciudad más sombría: bajar brillo de texturas Kenney
           if (m.color && key.startsWith('town/')) {
-            m.color.multiplyScalar(0.55)
-            m.roughness = Math.min(1, (m.roughness ?? 0.7) + 0.15)
+            m.color.multiplyScalar(0.45)
+            m.roughness = 1
           }
         }
       }
@@ -238,210 +216,136 @@ function makeDoorProxy(buildingId, name, x, z, rotY = 0) {
   worldRoot.add(makeSign(name, x + 1.8, 2.4, z + 0.6, rotY))
 }
 
-/** Casa rectangular con paredes, puerta al frente (+Z) y techo */
 function buildHouse(cx, cz, opts) {
-  const {
-    id,
-    name,
-    w = 3,
-    d = 3,
-    wood = false,
-    rotY = 0,
-    tall = false,
-  } = opts
+  const { id, name, w = 3, d = 3, plaster = false, rotY = 0 } = opts
   const g = new THREE.Group()
   g.position.set(cx, 0, cz)
   g.rotation.y = rotY
   worldRoot.add(g)
 
-  const wallKey = wood ? 'town/wall-wood.glb' : 'town/wall.glb'
-  const doorKey = wood ? 'town/wall-wood-door.glb' : 'town/wall-door.glb'
-  const winKey = wood ? 'town/wall-wood-window-shutters.glb' : 'town/wall-window-shutters.glb'
-  const cornerKey = wood ? 'town/wall-wood-corner.glb' : 'town/wall-corner.glb'
-  const s = TOWN_SCALE
+  const wallKey = plaster ? 'village/Wall_Plaster_Straight.gltf' : 'village/Wall_UnevenBrick_Straight.gltf'
+  const doorKey = plaster ? 'village/Wall_Plaster_Door_Round.gltf' : 'village/Wall_UnevenBrick_Door_Flat.gltf'
+  const winKey = plaster
+    ? 'village/Wall_Plaster_Window_Wide_Round.gltf'
+    : 'village/Wall_UnevenBrick_Window_Wide_Flat.gltf'
+  const s = WALL_W
   const halfW = ((w - 1) * s) / 2
   const halfD = ((d - 1) * s) / 2
 
-  // Frente (+Z): puerta al centro
   for (let i = 0; i < w; i++) {
     const x = -halfW + i * s
-    const key = i === Math.floor(w / 2) ? doorKey : i % 2 === 0 ? winKey : wallKey
-    place(key, x, 0, halfD, 0, s, g)
+    place(i === Math.floor(w / 2) ? doorKey : i % 2 ? winKey : wallKey, x, 0, halfD, 0, 1, g)
   }
-  // Fondo (-Z)
   for (let i = 0; i < w; i++) {
     const x = -halfW + i * s
-    place(i % 2 ? winKey : wallKey, x, 0, -halfD, Math.PI, s, g)
+    place(i % 2 ? winKey : wallKey, x, 0, -halfD, Math.PI, 1, g)
   }
-  // Laterales
   for (let i = 1; i < d - 1; i++) {
     const z = -halfD + i * s
-    place(wallKey, -halfW, 0, z, Math.PI / 2, s, g)
-    place(i % 2 ? winKey : wallKey, halfW, 0, z, -Math.PI / 2, s, g)
+    place(wallKey, -halfW, 0, z, Math.PI / 2, 1, g)
+    place(i % 2 ? winKey : wallKey, halfW, 0, z, -Math.PI / 2, 1, g)
   }
-  place(cornerKey, -halfW, 0, -halfD, Math.PI / 2, s, g)
-  place(cornerKey, halfW, 0, -halfD, 0, s, g)
-
-  // Segundo piso opcional (monasterio)
-  if (tall) {
-    for (let i = 0; i < w; i++) {
-      const x = -halfW + i * s
-      place(wallKey, x, s, halfD, 0, s, g)
-      place(wallKey, x, s, -halfD, Math.PI, s, g)
-    }
-  }
-
-  // Techo
-  const roofY = tall ? s * 2 : s
-  for (let i = 0; i < w; i++) {
-    for (let j = 0; j < d; j++) {
-      const x = -halfW + i * s
-      const z = -halfD + j * s
-      const isEdge = i === 0 || i === w - 1 || j === 0 || j === d - 1
-      place(isEdge ? 'town/roof-gable.glb' : 'town/roof.glb', x, roofY, z, 0, s, g)
-    }
-  }
-  place('town/chimney.glb', halfW * 0.4, roofY, -halfD * 0.3, 0, s, g)
-  place('town/chimney-top.glb', halfW * 0.4, roofY + s * 0.55, -halfD * 0.3, 0, s, g)
-  if (name.includes('Ayuntamiento') || name.includes('Monasterio')) {
-    place('town/banner-red.glb', 0, roofY + s * 0.2, halfD + 0.2, 0, s * 0.9, g)
+  // techo
+  const roofKey = w >= 3 ? 'village/Roof_RoundTiles_6x6.gltf' : 'village/Roof_RoundTiles_4x4.gltf'
+  place(roofKey, 0, 0.05, 0, 0, 1, g)
+  place('village/Prop_Chimney.gltf', halfW * 0.35, 0, -halfD * 0.2, 0, 1, g)
+  if (templates['village/Prop_Vine1.gltf']) {
+    place('village/Prop_Vine1.gltf', -halfW - 0.2, 0, 0, Math.PI / 2, 1, g)
   }
 
   g.updateMatrixWorld(true)
   const box = boxOf(g)
-  addColliderFromBox(box, 0.25)
-
-  // puerta mundo: frente del grupo
-  const doorLocal = new THREE.Vector3(0, 0, halfD + 1.2)
+  addColliderFromBox(box, 0.2)
+  const doorLocal = new THREE.Vector3(0, 0, halfD + 1.1)
   doorLocal.applyMatrix4(g.matrixWorld)
   makeDoorProxy(id, name, doorLocal.x, doorLocal.z, rotY)
   return g
 }
 
 function buildPlaza() {
-  const s = TOWN_SCALE
-  // fuente
-  place('town/fountain-round-detail.glb', 0, 0, 0, 0, s * 1.4)
-  place('town/fountain-round.glb', 0, 0, 0, 0, s * 1.15)
-  worldRoot.add(makeSign('Plaza', -4, 2.1, 5, 0))
-
-  // caminos en cruz
-  for (let i = -6; i <= 6; i++) {
-    if (Math.abs(i) < 2) continue
-    place('town/road.glb', i * s, 0.01, 0, 0, s)
-    place('town/road.glb', 0, 0.01, i * s, Math.PI / 2, s)
+  for (let ix = -3; ix <= 3; ix++) {
+    for (let iz = -3; iz <= 3; iz++) {
+      if (Math.abs(ix) < 1 && Math.abs(iz) < 1) continue
+      place('village/Floor_UnevenBrick.gltf', ix * WALL_W, 0.02, iz * WALL_W, 0, 1)
+    }
   }
-  for (const [x, z, ry] of [
-    [-2, -2, 0],
-    [2, -2, Math.PI / 2],
-    [2, 2, Math.PI],
-    [-2, 2, -Math.PI / 2],
-  ]) {
-    place('town/road-corner.glb', x * s, 0.01, z * s, ry, s)
-  }
-
-  // puestos de mercado (sucios / época)
-  place('town/stall-red.glb', -10, 0, 8, 0.4, s)
-  place('town/stall-green.glb', 11, 0, 7, -0.3, s)
-  place('town/stall.glb', -8, 0, -9, 0.2, s)
-  place('town/cart.glb', 9, 0, -8, 1.2, s * 0.9)
-
-  // antorchas de madera + llama (no faroles eléctricos)
+  worldRoot.add(makeSign('Plaza', -3.2, 2.0, 4.5, 0))
+  place('village/Prop_Wagon.gltf', -8, 0, 7, 0.5, 1)
+  place('village/Prop_Crate.gltf', 7, 0, 6, -0.3, 1)
+  place('village/Prop_Crate.gltf', 8.2, 0, 5.5, 0.4, 1)
   for (const [x, z] of [
-    [-6, 6],
-    [6, 6],
-    [-6, -6],
-    [6, -6],
-    [0, 10],
-    [0, -10],
+    [-5, 5],
+    [5, 5],
+    [-5, -5],
+    [5, -5],
+    [0, 8],
+    [0, -8],
   ]) {
-    worldRoot.add(makeTorch(x, z))
+    worldRoot.add(makeCandle(x, z))
   }
 }
 
-function makeTorch(x, z) {
+function makeCandle(x, z) {
   const g = new THREE.Group()
-  const post = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.07, 0.09, 2.2, 6),
-    new THREE.MeshStandardMaterial({ color: 0x3a2414, roughness: 0.95 }),
-  )
-  post.position.y = 1.1
-  const head = new THREE.Mesh(
-    new THREE.BoxGeometry(0.22, 0.28, 0.22),
+  const stick = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.04, 0.05, 0.9, 8),
     new THREE.MeshStandardMaterial({ color: 0x2a1a10, roughness: 1 }),
   )
-  head.position.y = 2.2
+  stick.position.y = 0.45
+  const wax = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.035, 0.04, 0.28, 10),
+    new THREE.MeshStandardMaterial({ color: 0xd8c9a0, roughness: 0.7 }),
+  )
+  wax.position.y = 1.0
   const flame = new THREE.Mesh(
-    new THREE.SphereGeometry(0.12, 8, 8),
+    new THREE.SphereGeometry(0.045, 8, 8),
     new THREE.MeshStandardMaterial({
-      color: 0xff6a1a,
-      emissive: 0xff5510,
-      emissiveIntensity: 1.4,
+      color: 0xffaa44,
+      emissive: 0xff6611,
+      emissiveIntensity: 1.6,
       roughness: 1,
     }),
   )
-  flame.position.y = 2.45
+  flame.position.y = 1.2
   flame.userData.flame = true
-  g.add(post, head, flame)
+  g.add(stick, wax, flame)
   g.position.set(x, 0, z)
-  const light = new THREE.PointLight(0xff7a30, 0.55, 12, 2)
-  light.position.set(0, 2.4, 0)
+  const light = new THREE.PointLight(0xff8a3a, 0.45, 8, 2)
+  light.position.set(0, 1.15, 0)
   g.add(light)
   return g
 }
 
 function scatterNature() {
-  const s = TOWN_SCALE
   const trees = [
-    [-42, -18, 'town/tree-high.glb'],
-    [-38, 8, 'town/tree.glb'],
-    [-45, 22, 'town/tree-crooked.glb'],
-    [40, -20, 'town/tree-high-round.glb'],
-    [44, 5, 'town/tree-high.glb'],
-    [38, 28, 'town/tree.glb'],
-    [-20, 42, 'town/tree-crooked.glb'],
-    [18, 44, 'town/tree-high.glb'],
-    [-50, -5, 'town/tree.glb'],
-    [50, -8, 'town/tree-high-round.glb'],
-    [-15, -40, 'town/tree.glb'],
-    [12, -42, 'town/tree-high.glb'],
+    [-36, -16, 'town/tree-high.glb'],
+    [-32, 10, 'town/tree.glb'],
+    [34, -18, 'town/tree-high-round.glb'],
+    [38, 8, 'town/tree-high.glb'],
+    [-18, 36, 'town/tree-crooked.glb'],
+    [16, 38, 'town/tree.glb'],
+    [-42, 4, 'town/tree.glb'],
+    [42, -4, 'town/tree-high.glb'],
   ]
   for (const [x, z, key] of trees) {
-    const t = place(key, x, 0, z, Math.random() * Math.PI, s * (0.9 + Math.random() * 0.4))
-    addColliderFromBox(boxOf(t), 0.6)
+    if (!templates[key]) continue
+    const t = place(key, x, 0, z, Math.random() * Math.PI, 2.2)
+    addColliderFromBox(boxOf(t), 0.5)
   }
-  for (const [x, z] of [
-    [-32, 12],
-    [32, 14],
-    [-25, -32],
-    [22, 38],
-  ]) {
-    place('town/hedge-large.glb', x, 0, z, 0, s)
+  for (let i = 0; i < 6; i++) {
+    place('village/Prop_WoodenFence_Single.gltf', 14 + i * 1.6, 0, 34, 0, 1)
   }
-  for (const [x, z] of [
-    [-12, 18],
-    [14, -14],
-    [-30, 30],
-  ]) {
-    place('town/rock-wide.glb', x, 0, z, Math.random(), s)
-  }
-  // cercas cerca de posada
-  for (let i = 0; i < 5; i++) {
-    place('town/fence.glb', 18 + i * s * 0.95, 0, 38, 0, s)
-  }
-  place('town/fence-gate.glb', 18 + 2.5 * s, 0, 38, 0, s)
 }
 
 function buildExtraHouses() {
   // casas de relleno para sensación de ciudad
   const extras = [
-    { x: -48, z: -30, w: 2, d: 2, wood: true },
-    { x: -52, z: 10, w: 2, d: 3, wood: true },
-    { x: 48, z: -12, w: 3, d: 2, wood: true },
-    { x: 46, z: 20, w: 2, d: 2, wood: true },
-    { x: -18, z: 48, w: 2, d: 2, wood: true },
-    { x: 30, z: 48, w: 3, d: 2, wood: true },
-    { x: -40, z: 40, w: 2, d: 2, wood: true },
+    { x: -40, z: -26, w: 2, d: 2, plaster: true },
+    { x: -44, z: 8, w: 2, d: 3, plaster: false },
+    { x: 40, z: -10, w: 3, d: 2, plaster: true },
+    { x: 38, z: 18, w: 2, d: 2, plaster: false },
+    { x: -16, z: 40, w: 2, d: 2, plaster: true },
+    { x: 26, z: 40, w: 3, d: 2, plaster: false },
   ]
   extras.forEach((e, i) => {
     buildHouse(e.x, e.z, {
@@ -449,7 +353,7 @@ function buildExtraHouses() {
       name: `Casa ${i + 1}`,
       w: e.w,
       d: e.d,
-      wood: e.wood,
+      plaster: e.plaster,
       rotY: (i % 4) * (Math.PI / 8),
     })
   })
@@ -504,29 +408,28 @@ function buildExterior() {
   }
 
   buildPlaza()
-  buildHouse(-28, -22, {
+  buildHouse(-24, -20, {
     id: 'ayuntamiento',
     name: 'Ayuntamiento',
     w: 4,
     d: 3,
-    wood: false,
+    plaster: false,
     rotY: 0,
   })
-  buildHouse(26, -26, {
+  buildHouse(22, -22, {
     id: 'monasterio',
     name: 'Monasterio',
     w: 3,
     d: 4,
-    wood: false,
-    tall: true,
+    plaster: true,
     rotY: Math.PI * 0.08,
   })
-  buildHouse(8, 30, {
+  buildHouse(6, 26, {
     id: 'posada',
     name: 'Posada',
     w: 4,
     d: 3,
-    wood: true,
+    plaster: false,
     rotY: -Math.PI * 0.05,
   })
   buildExtraHouses()
@@ -654,11 +557,11 @@ function applyRoleLook(root, role) {
         return mat
       }
       if (role === 'Alcalde') {
-        mat.color = new THREE.Color(/pant|leg|boot/.test(name) ? 0x121820 : 0x1a3a55)
+        mat.color = new THREE.Color(/pant|leg|boot/.test(name) ? 0x1a2838 : 0x2a5080)
       } else if (role === 'Pregonero') {
-        mat.color = new THREE.Color(/pant|leg|boot/.test(name) ? 0x2a1c10 : 0x4a3218)
+        mat.color = new THREE.Color(/pant|leg|boot/.test(name) ? 0x3a2818 : 0x6a4a28)
       } else {
-        mat.color = new THREE.Color(0x0d0b0a)
+        mat.color = new THREE.Color(0x2a2220)
       }
       mat.metalness = 0.05
       mat.roughness = 0.85
@@ -702,13 +605,30 @@ function makeRoleCharacter(role) {
   if (!templates['xbot.glb']) return makeColonialPerson(role)
   try {
     const { root, animations } = cloneTemplate('xbot.glb')
-    // Mixamo en centímetros → metros (~1.75 m)
-    root.scale.setScalar(0.01)
+    // xbot YA está en metros (~1.8). NO escalar a 0.01 (eso lo hacía fantasma).
+    root.scale.setScalar(1)
     root.updateMatrixWorld(true)
     const box = new THREE.Box3().setFromObject(root)
     root.position.y -= box.min.y
+    // ocultar esqueleto "joints" (bolitas) que parece fantasma
+    root.traverse((c) => {
+      const n = `${c.name || ''} ${c.material?.name || ''}`.toLowerCase()
+      if (/joint|beta_joints/.test(n)) c.visible = false
+      if (c.isMesh && c.material) {
+        const mats = Array.isArray(c.material) ? c.material : [c.material]
+        for (const m of mats) {
+          if (!m) continue
+          m.metalness = 0.05
+          m.roughness = 0.85
+          m.transparent = false
+          m.opacity = 1
+          m.depthWrite = true
+          m.side = THREE.FrontSide
+        }
+      }
+    })
     applyRoleLook(root, role)
-    root.userData.radius = 0.35
+    root.userData.radius = 0.4
     root.userData.role = role
     root.userData.animations = animations
     return root
