@@ -125,6 +125,9 @@
   var SIGNED_RED_RGTC1_Format = 36284;
   var RED_GREEN_RGTC2_Format = 36285;
   var SIGNED_RED_GREEN_RGTC2_Format = 36286;
+  var LoopOnce = 2200;
+  var LoopRepeat = 2201;
+  var LoopPingPong = 2202;
   var InterpolateDiscrete = 2300;
   var InterpolateLinear = 2301;
   var InterpolateSmooth = 2302;
@@ -132,6 +135,7 @@
   var ZeroSlopeEnding = 2401;
   var WrapAroundEnding = 2402;
   var NormalAnimationBlendMode = 2500;
+  var AdditiveAnimationBlendMode = 2501;
   var TrianglesDrawMode = 0;
   var TriangleStripDrawMode = 1;
   var TriangleFanDrawMode = 2;
@@ -20855,6 +20859,157 @@
   function now() {
     return (typeof performance === "undefined" ? Date : performance).now();
   }
+  var PropertyMixer = class {
+    constructor(binding, typeName, valueSize) {
+      this.binding = binding;
+      this.valueSize = valueSize;
+      let mixFunction, mixFunctionAdditive, setIdentity;
+      switch (typeName) {
+        case "quaternion":
+          mixFunction = this._slerp;
+          mixFunctionAdditive = this._slerpAdditive;
+          setIdentity = this._setAdditiveIdentityQuaternion;
+          this.buffer = new Float64Array(valueSize * 6);
+          this._workIndex = 5;
+          break;
+        case "string":
+        case "bool":
+          mixFunction = this._select;
+          mixFunctionAdditive = this._select;
+          setIdentity = this._setAdditiveIdentityOther;
+          this.buffer = new Array(valueSize * 5);
+          break;
+        default:
+          mixFunction = this._lerp;
+          mixFunctionAdditive = this._lerpAdditive;
+          setIdentity = this._setAdditiveIdentityNumeric;
+          this.buffer = new Float64Array(valueSize * 5);
+      }
+      this._mixBufferRegion = mixFunction;
+      this._mixBufferRegionAdditive = mixFunctionAdditive;
+      this._setIdentity = setIdentity;
+      this._origIndex = 3;
+      this._addIndex = 4;
+      this.cumulativeWeight = 0;
+      this.cumulativeWeightAdditive = 0;
+      this.useCount = 0;
+      this.referenceCount = 0;
+    }
+    // accumulate data in the 'incoming' region into 'accu<i>'
+    accumulate(accuIndex, weight) {
+      const buffer = this.buffer, stride = this.valueSize, offset = accuIndex * stride + stride;
+      let currentWeight = this.cumulativeWeight;
+      if (currentWeight === 0) {
+        for (let i = 0; i !== stride; ++i) {
+          buffer[offset + i] = buffer[i];
+        }
+        currentWeight = weight;
+      } else {
+        currentWeight += weight;
+        const mix = weight / currentWeight;
+        this._mixBufferRegion(buffer, offset, 0, mix, stride);
+      }
+      this.cumulativeWeight = currentWeight;
+    }
+    // accumulate data in the 'incoming' region into 'add'
+    accumulateAdditive(weight) {
+      const buffer = this.buffer, stride = this.valueSize, offset = stride * this._addIndex;
+      if (this.cumulativeWeightAdditive === 0) {
+        this._setIdentity();
+      }
+      this._mixBufferRegionAdditive(buffer, offset, 0, weight, stride);
+      this.cumulativeWeightAdditive += weight;
+    }
+    // apply the state of 'accu<i>' to the binding when accus differ
+    apply(accuIndex) {
+      const stride = this.valueSize, buffer = this.buffer, offset = accuIndex * stride + stride, weight = this.cumulativeWeight, weightAdditive = this.cumulativeWeightAdditive, binding = this.binding;
+      this.cumulativeWeight = 0;
+      this.cumulativeWeightAdditive = 0;
+      if (weight < 1) {
+        const originalValueOffset = stride * this._origIndex;
+        this._mixBufferRegion(
+          buffer,
+          offset,
+          originalValueOffset,
+          1 - weight,
+          stride
+        );
+      }
+      if (weightAdditive > 0) {
+        this._mixBufferRegionAdditive(buffer, offset, this._addIndex * stride, 1, stride);
+      }
+      for (let i = stride, e = stride + stride; i !== e; ++i) {
+        if (buffer[i] !== buffer[i + stride]) {
+          binding.setValue(buffer, offset);
+          break;
+        }
+      }
+    }
+    // remember the state of the bound property and copy it to both accus
+    saveOriginalState() {
+      const binding = this.binding;
+      const buffer = this.buffer, stride = this.valueSize, originalValueOffset = stride * this._origIndex;
+      binding.getValue(buffer, originalValueOffset);
+      for (let i = stride, e = originalValueOffset; i !== e; ++i) {
+        buffer[i] = buffer[originalValueOffset + i % stride];
+      }
+      this._setIdentity();
+      this.cumulativeWeight = 0;
+      this.cumulativeWeightAdditive = 0;
+    }
+    // apply the state previously taken via 'saveOriginalState' to the binding
+    restoreOriginalState() {
+      const originalValueOffset = this.valueSize * 3;
+      this.binding.setValue(this.buffer, originalValueOffset);
+    }
+    _setAdditiveIdentityNumeric() {
+      const startIndex = this._addIndex * this.valueSize;
+      const endIndex = startIndex + this.valueSize;
+      for (let i = startIndex; i < endIndex; i++) {
+        this.buffer[i] = 0;
+      }
+    }
+    _setAdditiveIdentityQuaternion() {
+      this._setAdditiveIdentityNumeric();
+      this.buffer[this._addIndex * this.valueSize + 3] = 1;
+    }
+    _setAdditiveIdentityOther() {
+      const startIndex = this._origIndex * this.valueSize;
+      const targetIndex = this._addIndex * this.valueSize;
+      for (let i = 0; i < this.valueSize; i++) {
+        this.buffer[targetIndex + i] = this.buffer[startIndex + i];
+      }
+    }
+    // mix functions
+    _select(buffer, dstOffset, srcOffset, t, stride) {
+      if (t >= 0.5) {
+        for (let i = 0; i !== stride; ++i) {
+          buffer[dstOffset + i] = buffer[srcOffset + i];
+        }
+      }
+    }
+    _slerp(buffer, dstOffset, srcOffset, t) {
+      Quaternion.slerpFlat(buffer, dstOffset, buffer, dstOffset, buffer, srcOffset, t);
+    }
+    _slerpAdditive(buffer, dstOffset, srcOffset, t, stride) {
+      const workOffset = this._workIndex * stride;
+      Quaternion.multiplyQuaternionsFlat(buffer, workOffset, buffer, dstOffset, buffer, srcOffset);
+      Quaternion.slerpFlat(buffer, dstOffset, buffer, dstOffset, buffer, workOffset, t);
+    }
+    _lerp(buffer, dstOffset, srcOffset, t, stride) {
+      const s = 1 - t;
+      for (let i = 0; i !== stride; ++i) {
+        const j = dstOffset + i;
+        buffer[j] = buffer[j] * s + buffer[srcOffset + i] * t;
+      }
+    }
+    _lerpAdditive(buffer, dstOffset, srcOffset, t, stride) {
+      for (let i = 0; i !== stride; ++i) {
+        const j = dstOffset + i;
+        buffer[j] = buffer[j] + buffer[srcOffset + i] * t;
+      }
+    }
+  };
   var _RESERVED_CHARS_RE = "\\[\\]\\.:\\/";
   var _reservedRe = new RegExp("[" + _RESERVED_CHARS_RE + "]", "g");
   var _wordChar = "[^" + _RESERVED_CHARS_RE + "]";
@@ -21232,7 +21387,727 @@
       PropertyBinding.prototype._setValue_fromArray_setMatrixWorldNeedsUpdate
     ]
   ];
+  var AnimationAction = class {
+    constructor(mixer2, clip, localRoot = null, blendMode = clip.blendMode) {
+      this._mixer = mixer2;
+      this._clip = clip;
+      this._localRoot = localRoot;
+      this.blendMode = blendMode;
+      const tracks = clip.tracks, nTracks = tracks.length, interpolants = new Array(nTracks);
+      const interpolantSettings = {
+        endingStart: ZeroCurvatureEnding,
+        endingEnd: ZeroCurvatureEnding
+      };
+      for (let i = 0; i !== nTracks; ++i) {
+        const interpolant = tracks[i].createInterpolant(null);
+        interpolants[i] = interpolant;
+        interpolant.settings = interpolantSettings;
+      }
+      this._interpolantSettings = interpolantSettings;
+      this._interpolants = interpolants;
+      this._propertyBindings = new Array(nTracks);
+      this._cacheIndex = null;
+      this._byClipCacheIndex = null;
+      this._timeScaleInterpolant = null;
+      this._weightInterpolant = null;
+      this.loop = LoopRepeat;
+      this._loopCount = -1;
+      this._startTime = null;
+      this.time = 0;
+      this.timeScale = 1;
+      this._effectiveTimeScale = 1;
+      this.weight = 1;
+      this._effectiveWeight = 1;
+      this.repetitions = Infinity;
+      this.paused = false;
+      this.enabled = true;
+      this.clampWhenFinished = false;
+      this.zeroSlopeAtStart = true;
+      this.zeroSlopeAtEnd = true;
+    }
+    // State & Scheduling
+    play() {
+      this._mixer._activateAction(this);
+      return this;
+    }
+    stop() {
+      this._mixer._deactivateAction(this);
+      return this.reset();
+    }
+    reset() {
+      this.paused = false;
+      this.enabled = true;
+      this.time = 0;
+      this._loopCount = -1;
+      this._startTime = null;
+      return this.stopFading().stopWarping();
+    }
+    isRunning() {
+      return this.enabled && !this.paused && this.timeScale !== 0 && this._startTime === null && this._mixer._isActiveAction(this);
+    }
+    // return true when play has been called
+    isScheduled() {
+      return this._mixer._isActiveAction(this);
+    }
+    startAt(time) {
+      this._startTime = time;
+      return this;
+    }
+    setLoop(mode, repetitions) {
+      this.loop = mode;
+      this.repetitions = repetitions;
+      return this;
+    }
+    // Weight
+    // set the weight stopping any scheduled fading
+    // although .enabled = false yields an effective weight of zero, this
+    // method does *not* change .enabled, because it would be confusing
+    setEffectiveWeight(weight) {
+      this.weight = weight;
+      this._effectiveWeight = this.enabled ? weight : 0;
+      return this.stopFading();
+    }
+    // return the weight considering fading and .enabled
+    getEffectiveWeight() {
+      return this._effectiveWeight;
+    }
+    fadeIn(duration) {
+      return this._scheduleFading(duration, 0, 1);
+    }
+    fadeOut(duration) {
+      return this._scheduleFading(duration, 1, 0);
+    }
+    crossFadeFrom(fadeOutAction, duration, warp) {
+      fadeOutAction.fadeOut(duration);
+      this.fadeIn(duration);
+      if (warp) {
+        const fadeInDuration = this._clip.duration, fadeOutDuration = fadeOutAction._clip.duration, startEndRatio = fadeOutDuration / fadeInDuration, endStartRatio = fadeInDuration / fadeOutDuration;
+        fadeOutAction.warp(1, startEndRatio, duration);
+        this.warp(endStartRatio, 1, duration);
+      }
+      return this;
+    }
+    crossFadeTo(fadeInAction, duration, warp) {
+      return fadeInAction.crossFadeFrom(this, duration, warp);
+    }
+    stopFading() {
+      const weightInterpolant = this._weightInterpolant;
+      if (weightInterpolant !== null) {
+        this._weightInterpolant = null;
+        this._mixer._takeBackControlInterpolant(weightInterpolant);
+      }
+      return this;
+    }
+    // Time Scale Control
+    // set the time scale stopping any scheduled warping
+    // although .paused = true yields an effective time scale of zero, this
+    // method does *not* change .paused, because it would be confusing
+    setEffectiveTimeScale(timeScale) {
+      this.timeScale = timeScale;
+      this._effectiveTimeScale = this.paused ? 0 : timeScale;
+      return this.stopWarping();
+    }
+    // return the time scale considering warping and .paused
+    getEffectiveTimeScale() {
+      return this._effectiveTimeScale;
+    }
+    setDuration(duration) {
+      this.timeScale = this._clip.duration / duration;
+      return this.stopWarping();
+    }
+    syncWith(action) {
+      this.time = action.time;
+      this.timeScale = action.timeScale;
+      return this.stopWarping();
+    }
+    halt(duration) {
+      return this.warp(this._effectiveTimeScale, 0, duration);
+    }
+    warp(startTimeScale, endTimeScale, duration) {
+      const mixer2 = this._mixer, now2 = mixer2.time, timeScale = this.timeScale;
+      let interpolant = this._timeScaleInterpolant;
+      if (interpolant === null) {
+        interpolant = mixer2._lendControlInterpolant();
+        this._timeScaleInterpolant = interpolant;
+      }
+      const times = interpolant.parameterPositions, values = interpolant.sampleValues;
+      times[0] = now2;
+      times[1] = now2 + duration;
+      values[0] = startTimeScale / timeScale;
+      values[1] = endTimeScale / timeScale;
+      return this;
+    }
+    stopWarping() {
+      const timeScaleInterpolant = this._timeScaleInterpolant;
+      if (timeScaleInterpolant !== null) {
+        this._timeScaleInterpolant = null;
+        this._mixer._takeBackControlInterpolant(timeScaleInterpolant);
+      }
+      return this;
+    }
+    // Object Accessors
+    getMixer() {
+      return this._mixer;
+    }
+    getClip() {
+      return this._clip;
+    }
+    getRoot() {
+      return this._localRoot || this._mixer._root;
+    }
+    // Interna
+    _update(time, deltaTime, timeDirection, accuIndex) {
+      if (!this.enabled) {
+        this._updateWeight(time);
+        return;
+      }
+      const startTime = this._startTime;
+      if (startTime !== null) {
+        const timeRunning = (time - startTime) * timeDirection;
+        if (timeRunning < 0 || timeDirection === 0) {
+          deltaTime = 0;
+        } else {
+          this._startTime = null;
+          deltaTime = timeDirection * timeRunning;
+        }
+      }
+      deltaTime *= this._updateTimeScale(time);
+      const clipTime = this._updateTime(deltaTime);
+      const weight = this._updateWeight(time);
+      if (weight > 0) {
+        const interpolants = this._interpolants;
+        const propertyMixers = this._propertyBindings;
+        switch (this.blendMode) {
+          case AdditiveAnimationBlendMode:
+            for (let j = 0, m = interpolants.length; j !== m; ++j) {
+              interpolants[j].evaluate(clipTime);
+              propertyMixers[j].accumulateAdditive(weight);
+            }
+            break;
+          case NormalAnimationBlendMode:
+          default:
+            for (let j = 0, m = interpolants.length; j !== m; ++j) {
+              interpolants[j].evaluate(clipTime);
+              propertyMixers[j].accumulate(accuIndex, weight);
+            }
+        }
+      }
+    }
+    _updateWeight(time) {
+      let weight = 0;
+      if (this.enabled) {
+        weight = this.weight;
+        const interpolant = this._weightInterpolant;
+        if (interpolant !== null) {
+          const interpolantValue = interpolant.evaluate(time)[0];
+          weight *= interpolantValue;
+          if (time > interpolant.parameterPositions[1]) {
+            this.stopFading();
+            if (interpolantValue === 0) {
+              this.enabled = false;
+            }
+          }
+        }
+      }
+      this._effectiveWeight = weight;
+      return weight;
+    }
+    _updateTimeScale(time) {
+      let timeScale = 0;
+      if (!this.paused) {
+        timeScale = this.timeScale;
+        const interpolant = this._timeScaleInterpolant;
+        if (interpolant !== null) {
+          const interpolantValue = interpolant.evaluate(time)[0];
+          timeScale *= interpolantValue;
+          if (time > interpolant.parameterPositions[1]) {
+            this.stopWarping();
+            if (timeScale === 0) {
+              this.paused = true;
+            } else {
+              this.timeScale = timeScale;
+            }
+          }
+        }
+      }
+      this._effectiveTimeScale = timeScale;
+      return timeScale;
+    }
+    _updateTime(deltaTime) {
+      const duration = this._clip.duration;
+      const loop = this.loop;
+      let time = this.time + deltaTime;
+      let loopCount = this._loopCount;
+      const pingPong = loop === LoopPingPong;
+      if (deltaTime === 0) {
+        if (loopCount === -1) return time;
+        return pingPong && (loopCount & 1) === 1 ? duration - time : time;
+      }
+      if (loop === LoopOnce) {
+        if (loopCount === -1) {
+          this._loopCount = 0;
+          this._setEndings(true, true, false);
+        }
+        handle_stop: {
+          if (time >= duration) {
+            time = duration;
+          } else if (time < 0) {
+            time = 0;
+          } else {
+            this.time = time;
+            break handle_stop;
+          }
+          if (this.clampWhenFinished) this.paused = true;
+          else this.enabled = false;
+          this.time = time;
+          this._mixer.dispatchEvent({
+            type: "finished",
+            action: this,
+            direction: deltaTime < 0 ? -1 : 1
+          });
+        }
+      } else {
+        if (loopCount === -1) {
+          if (deltaTime >= 0) {
+            loopCount = 0;
+            this._setEndings(true, this.repetitions === 0, pingPong);
+          } else {
+            this._setEndings(this.repetitions === 0, true, pingPong);
+          }
+        }
+        if (time >= duration || time < 0) {
+          const loopDelta = Math.floor(time / duration);
+          time -= duration * loopDelta;
+          loopCount += Math.abs(loopDelta);
+          const pending = this.repetitions - loopCount;
+          if (pending <= 0) {
+            if (this.clampWhenFinished) this.paused = true;
+            else this.enabled = false;
+            time = deltaTime > 0 ? duration : 0;
+            this.time = time;
+            this._mixer.dispatchEvent({
+              type: "finished",
+              action: this,
+              direction: deltaTime > 0 ? 1 : -1
+            });
+          } else {
+            if (pending === 1) {
+              const atStart = deltaTime < 0;
+              this._setEndings(atStart, !atStart, pingPong);
+            } else {
+              this._setEndings(false, false, pingPong);
+            }
+            this._loopCount = loopCount;
+            this.time = time;
+            this._mixer.dispatchEvent({
+              type: "loop",
+              action: this,
+              loopDelta
+            });
+          }
+        } else {
+          this.time = time;
+        }
+        if (pingPong && (loopCount & 1) === 1) {
+          return duration - time;
+        }
+      }
+      return time;
+    }
+    _setEndings(atStart, atEnd, pingPong) {
+      const settings = this._interpolantSettings;
+      if (pingPong) {
+        settings.endingStart = ZeroSlopeEnding;
+        settings.endingEnd = ZeroSlopeEnding;
+      } else {
+        if (atStart) {
+          settings.endingStart = this.zeroSlopeAtStart ? ZeroSlopeEnding : ZeroCurvatureEnding;
+        } else {
+          settings.endingStart = WrapAroundEnding;
+        }
+        if (atEnd) {
+          settings.endingEnd = this.zeroSlopeAtEnd ? ZeroSlopeEnding : ZeroCurvatureEnding;
+        } else {
+          settings.endingEnd = WrapAroundEnding;
+        }
+      }
+    }
+    _scheduleFading(duration, weightNow, weightThen) {
+      const mixer2 = this._mixer, now2 = mixer2.time;
+      let interpolant = this._weightInterpolant;
+      if (interpolant === null) {
+        interpolant = mixer2._lendControlInterpolant();
+        this._weightInterpolant = interpolant;
+      }
+      const times = interpolant.parameterPositions, values = interpolant.sampleValues;
+      times[0] = now2;
+      values[0] = weightNow;
+      times[1] = now2 + duration;
+      values[1] = weightThen;
+      return this;
+    }
+  };
   var _controlInterpolantsResultBuffer = new Float32Array(1);
+  var AnimationMixer = class extends EventDispatcher {
+    constructor(root) {
+      super();
+      this._root = root;
+      this._initMemoryManager();
+      this._accuIndex = 0;
+      this.time = 0;
+      this.timeScale = 1;
+    }
+    _bindAction(action, prototypeAction) {
+      const root = action._localRoot || this._root, tracks = action._clip.tracks, nTracks = tracks.length, bindings = action._propertyBindings, interpolants = action._interpolants, rootUuid = root.uuid, bindingsByRoot = this._bindingsByRootAndName;
+      let bindingsByName = bindingsByRoot[rootUuid];
+      if (bindingsByName === void 0) {
+        bindingsByName = {};
+        bindingsByRoot[rootUuid] = bindingsByName;
+      }
+      for (let i = 0; i !== nTracks; ++i) {
+        const track = tracks[i], trackName = track.name;
+        let binding = bindingsByName[trackName];
+        if (binding !== void 0) {
+          ++binding.referenceCount;
+          bindings[i] = binding;
+        } else {
+          binding = bindings[i];
+          if (binding !== void 0) {
+            if (binding._cacheIndex === null) {
+              ++binding.referenceCount;
+              this._addInactiveBinding(binding, rootUuid, trackName);
+            }
+            continue;
+          }
+          const path = prototypeAction && prototypeAction._propertyBindings[i].binding.parsedPath;
+          binding = new PropertyMixer(
+            PropertyBinding.create(root, trackName, path),
+            track.ValueTypeName,
+            track.getValueSize()
+          );
+          ++binding.referenceCount;
+          this._addInactiveBinding(binding, rootUuid, trackName);
+          bindings[i] = binding;
+        }
+        interpolants[i].resultBuffer = binding.buffer;
+      }
+    }
+    _activateAction(action) {
+      if (!this._isActiveAction(action)) {
+        if (action._cacheIndex === null) {
+          const rootUuid = (action._localRoot || this._root).uuid, clipUuid = action._clip.uuid, actionsForClip = this._actionsByClip[clipUuid];
+          this._bindAction(
+            action,
+            actionsForClip && actionsForClip.knownActions[0]
+          );
+          this._addInactiveAction(action, clipUuid, rootUuid);
+        }
+        const bindings = action._propertyBindings;
+        for (let i = 0, n = bindings.length; i !== n; ++i) {
+          const binding = bindings[i];
+          if (binding.useCount++ === 0) {
+            this._lendBinding(binding);
+            binding.saveOriginalState();
+          }
+        }
+        this._lendAction(action);
+      }
+    }
+    _deactivateAction(action) {
+      if (this._isActiveAction(action)) {
+        const bindings = action._propertyBindings;
+        for (let i = 0, n = bindings.length; i !== n; ++i) {
+          const binding = bindings[i];
+          if (--binding.useCount === 0) {
+            binding.restoreOriginalState();
+            this._takeBackBinding(binding);
+          }
+        }
+        this._takeBackAction(action);
+      }
+    }
+    // Memory manager
+    _initMemoryManager() {
+      this._actions = [];
+      this._nActiveActions = 0;
+      this._actionsByClip = {};
+      this._bindings = [];
+      this._nActiveBindings = 0;
+      this._bindingsByRootAndName = {};
+      this._controlInterpolants = [];
+      this._nActiveControlInterpolants = 0;
+      const scope = this;
+      this.stats = {
+        actions: {
+          get total() {
+            return scope._actions.length;
+          },
+          get inUse() {
+            return scope._nActiveActions;
+          }
+        },
+        bindings: {
+          get total() {
+            return scope._bindings.length;
+          },
+          get inUse() {
+            return scope._nActiveBindings;
+          }
+        },
+        controlInterpolants: {
+          get total() {
+            return scope._controlInterpolants.length;
+          },
+          get inUse() {
+            return scope._nActiveControlInterpolants;
+          }
+        }
+      };
+    }
+    // Memory management for AnimationAction objects
+    _isActiveAction(action) {
+      const index = action._cacheIndex;
+      return index !== null && index < this._nActiveActions;
+    }
+    _addInactiveAction(action, clipUuid, rootUuid) {
+      const actions = this._actions, actionsByClip = this._actionsByClip;
+      let actionsForClip = actionsByClip[clipUuid];
+      if (actionsForClip === void 0) {
+        actionsForClip = {
+          knownActions: [action],
+          actionByRoot: {}
+        };
+        action._byClipCacheIndex = 0;
+        actionsByClip[clipUuid] = actionsForClip;
+      } else {
+        const knownActions = actionsForClip.knownActions;
+        action._byClipCacheIndex = knownActions.length;
+        knownActions.push(action);
+      }
+      action._cacheIndex = actions.length;
+      actions.push(action);
+      actionsForClip.actionByRoot[rootUuid] = action;
+    }
+    _removeInactiveAction(action) {
+      const actions = this._actions, lastInactiveAction = actions[actions.length - 1], cacheIndex = action._cacheIndex;
+      lastInactiveAction._cacheIndex = cacheIndex;
+      actions[cacheIndex] = lastInactiveAction;
+      actions.pop();
+      action._cacheIndex = null;
+      const clipUuid = action._clip.uuid, actionsByClip = this._actionsByClip, actionsForClip = actionsByClip[clipUuid], knownActionsForClip = actionsForClip.knownActions, lastKnownAction = knownActionsForClip[knownActionsForClip.length - 1], byClipCacheIndex = action._byClipCacheIndex;
+      lastKnownAction._byClipCacheIndex = byClipCacheIndex;
+      knownActionsForClip[byClipCacheIndex] = lastKnownAction;
+      knownActionsForClip.pop();
+      action._byClipCacheIndex = null;
+      const actionByRoot = actionsForClip.actionByRoot, rootUuid = (action._localRoot || this._root).uuid;
+      delete actionByRoot[rootUuid];
+      if (knownActionsForClip.length === 0) {
+        delete actionsByClip[clipUuid];
+      }
+      this._removeInactiveBindingsForAction(action);
+    }
+    _removeInactiveBindingsForAction(action) {
+      const bindings = action._propertyBindings;
+      for (let i = 0, n = bindings.length; i !== n; ++i) {
+        const binding = bindings[i];
+        if (--binding.referenceCount === 0) {
+          this._removeInactiveBinding(binding);
+        }
+      }
+    }
+    _lendAction(action) {
+      const actions = this._actions, prevIndex = action._cacheIndex, lastActiveIndex = this._nActiveActions++, firstInactiveAction = actions[lastActiveIndex];
+      action._cacheIndex = lastActiveIndex;
+      actions[lastActiveIndex] = action;
+      firstInactiveAction._cacheIndex = prevIndex;
+      actions[prevIndex] = firstInactiveAction;
+    }
+    _takeBackAction(action) {
+      const actions = this._actions, prevIndex = action._cacheIndex, firstInactiveIndex = --this._nActiveActions, lastActiveAction = actions[firstInactiveIndex];
+      action._cacheIndex = firstInactiveIndex;
+      actions[firstInactiveIndex] = action;
+      lastActiveAction._cacheIndex = prevIndex;
+      actions[prevIndex] = lastActiveAction;
+    }
+    // Memory management for PropertyMixer objects
+    _addInactiveBinding(binding, rootUuid, trackName) {
+      const bindingsByRoot = this._bindingsByRootAndName, bindings = this._bindings;
+      let bindingByName = bindingsByRoot[rootUuid];
+      if (bindingByName === void 0) {
+        bindingByName = {};
+        bindingsByRoot[rootUuid] = bindingByName;
+      }
+      bindingByName[trackName] = binding;
+      binding._cacheIndex = bindings.length;
+      bindings.push(binding);
+    }
+    _removeInactiveBinding(binding) {
+      const bindings = this._bindings, propBinding = binding.binding, rootUuid = propBinding.rootNode.uuid, trackName = propBinding.path, bindingsByRoot = this._bindingsByRootAndName, bindingByName = bindingsByRoot[rootUuid], lastInactiveBinding = bindings[bindings.length - 1], cacheIndex = binding._cacheIndex;
+      lastInactiveBinding._cacheIndex = cacheIndex;
+      bindings[cacheIndex] = lastInactiveBinding;
+      bindings.pop();
+      delete bindingByName[trackName];
+      if (Object.keys(bindingByName).length === 0) {
+        delete bindingsByRoot[rootUuid];
+      }
+    }
+    _lendBinding(binding) {
+      const bindings = this._bindings, prevIndex = binding._cacheIndex, lastActiveIndex = this._nActiveBindings++, firstInactiveBinding = bindings[lastActiveIndex];
+      binding._cacheIndex = lastActiveIndex;
+      bindings[lastActiveIndex] = binding;
+      firstInactiveBinding._cacheIndex = prevIndex;
+      bindings[prevIndex] = firstInactiveBinding;
+    }
+    _takeBackBinding(binding) {
+      const bindings = this._bindings, prevIndex = binding._cacheIndex, firstInactiveIndex = --this._nActiveBindings, lastActiveBinding = bindings[firstInactiveIndex];
+      binding._cacheIndex = firstInactiveIndex;
+      bindings[firstInactiveIndex] = binding;
+      lastActiveBinding._cacheIndex = prevIndex;
+      bindings[prevIndex] = lastActiveBinding;
+    }
+    // Memory management of Interpolants for weight and time scale
+    _lendControlInterpolant() {
+      const interpolants = this._controlInterpolants, lastActiveIndex = this._nActiveControlInterpolants++;
+      let interpolant = interpolants[lastActiveIndex];
+      if (interpolant === void 0) {
+        interpolant = new LinearInterpolant(
+          new Float32Array(2),
+          new Float32Array(2),
+          1,
+          _controlInterpolantsResultBuffer
+        );
+        interpolant.__cacheIndex = lastActiveIndex;
+        interpolants[lastActiveIndex] = interpolant;
+      }
+      return interpolant;
+    }
+    _takeBackControlInterpolant(interpolant) {
+      const interpolants = this._controlInterpolants, prevIndex = interpolant.__cacheIndex, firstInactiveIndex = --this._nActiveControlInterpolants, lastActiveInterpolant = interpolants[firstInactiveIndex];
+      interpolant.__cacheIndex = firstInactiveIndex;
+      interpolants[firstInactiveIndex] = interpolant;
+      lastActiveInterpolant.__cacheIndex = prevIndex;
+      interpolants[prevIndex] = lastActiveInterpolant;
+    }
+    // return an action for a clip optionally using a custom root target
+    // object (this method allocates a lot of dynamic memory in case a
+    // previously unknown clip/root combination is specified)
+    clipAction(clip, optionalRoot, blendMode) {
+      const root = optionalRoot || this._root, rootUuid = root.uuid;
+      let clipObject = typeof clip === "string" ? AnimationClip.findByName(root, clip) : clip;
+      const clipUuid = clipObject !== null ? clipObject.uuid : clip;
+      const actionsForClip = this._actionsByClip[clipUuid];
+      let prototypeAction = null;
+      if (blendMode === void 0) {
+        if (clipObject !== null) {
+          blendMode = clipObject.blendMode;
+        } else {
+          blendMode = NormalAnimationBlendMode;
+        }
+      }
+      if (actionsForClip !== void 0) {
+        const existingAction = actionsForClip.actionByRoot[rootUuid];
+        if (existingAction !== void 0 && existingAction.blendMode === blendMode) {
+          return existingAction;
+        }
+        prototypeAction = actionsForClip.knownActions[0];
+        if (clipObject === null)
+          clipObject = prototypeAction._clip;
+      }
+      if (clipObject === null) return null;
+      const newAction = new AnimationAction(this, clipObject, optionalRoot, blendMode);
+      this._bindAction(newAction, prototypeAction);
+      this._addInactiveAction(newAction, clipUuid, rootUuid);
+      return newAction;
+    }
+    // get an existing action
+    existingAction(clip, optionalRoot) {
+      const root = optionalRoot || this._root, rootUuid = root.uuid, clipObject = typeof clip === "string" ? AnimationClip.findByName(root, clip) : clip, clipUuid = clipObject ? clipObject.uuid : clip, actionsForClip = this._actionsByClip[clipUuid];
+      if (actionsForClip !== void 0) {
+        return actionsForClip.actionByRoot[rootUuid] || null;
+      }
+      return null;
+    }
+    // deactivates all previously scheduled actions
+    stopAllAction() {
+      const actions = this._actions, nActions = this._nActiveActions;
+      for (let i = nActions - 1; i >= 0; --i) {
+        actions[i].stop();
+      }
+      return this;
+    }
+    // advance the time and update apply the animation
+    update(deltaTime) {
+      deltaTime *= this.timeScale;
+      const actions = this._actions, nActions = this._nActiveActions, time = this.time += deltaTime, timeDirection = Math.sign(deltaTime), accuIndex = this._accuIndex ^= 1;
+      for (let i = 0; i !== nActions; ++i) {
+        const action = actions[i];
+        action._update(time, deltaTime, timeDirection, accuIndex);
+      }
+      const bindings = this._bindings, nBindings = this._nActiveBindings;
+      for (let i = 0; i !== nBindings; ++i) {
+        bindings[i].apply(accuIndex);
+      }
+      return this;
+    }
+    // Allows you to seek to a specific time in an animation.
+    setTime(timeInSeconds) {
+      this.time = 0;
+      for (let i = 0; i < this._actions.length; i++) {
+        this._actions[i].time = 0;
+      }
+      return this.update(timeInSeconds);
+    }
+    // return this mixer's root target object
+    getRoot() {
+      return this._root;
+    }
+    // free all resources specific to a particular clip
+    uncacheClip(clip) {
+      const actions = this._actions, clipUuid = clip.uuid, actionsByClip = this._actionsByClip, actionsForClip = actionsByClip[clipUuid];
+      if (actionsForClip !== void 0) {
+        const actionsToRemove = actionsForClip.knownActions;
+        for (let i = 0, n = actionsToRemove.length; i !== n; ++i) {
+          const action = actionsToRemove[i];
+          this._deactivateAction(action);
+          const cacheIndex = action._cacheIndex, lastInactiveAction = actions[actions.length - 1];
+          action._cacheIndex = null;
+          action._byClipCacheIndex = null;
+          lastInactiveAction._cacheIndex = cacheIndex;
+          actions[cacheIndex] = lastInactiveAction;
+          actions.pop();
+          this._removeInactiveBindingsForAction(action);
+        }
+        delete actionsByClip[clipUuid];
+      }
+    }
+    // free all resources specific to a particular root target object
+    uncacheRoot(root) {
+      const rootUuid = root.uuid, actionsByClip = this._actionsByClip;
+      for (const clipUuid in actionsByClip) {
+        const actionByRoot = actionsByClip[clipUuid].actionByRoot, action = actionByRoot[rootUuid];
+        if (action !== void 0) {
+          this._deactivateAction(action);
+          this._removeInactiveAction(action);
+        }
+      }
+      const bindingsByRoot = this._bindingsByRootAndName, bindingByName = bindingsByRoot[rootUuid];
+      if (bindingByName !== void 0) {
+        for (const trackName in bindingByName) {
+          const binding = bindingByName[trackName];
+          binding.restoreOriginalState();
+          this._removeInactiveBinding(binding);
+        }
+      }
+    }
+    // remove a targeted clip from the cache
+    uncacheAction(clip, optionalRoot) {
+      const action = this.existingAction(clip, optionalRoot);
+      if (action !== null) {
+        this._deactivateAction(action);
+        this._removeInactiveAction(action);
+      }
+    }
+  };
   if (typeof __THREE_DEVTOOLS__ !== "undefined") {
     __THREE_DEVTOOLS__.dispatchEvent(new CustomEvent("register", { detail: {
       revision: REVISION
@@ -22684,13 +23559,13 @@
     _getNodeRef(cache, index, object) {
       if (cache.refs[index] <= 1) return object;
       const ref = object.clone();
-      const updateMappings = (original, clone) => {
+      const updateMappings = (original, clone2) => {
         const mappings = this.associations.get(original);
         if (mappings != null) {
-          this.associations.set(clone, mappings);
+          this.associations.set(clone2, mappings);
         }
         for (const [i, child] of original.children.entries()) {
-          updateMappings(child, clone.children[i]);
+          updateMappings(child, clone2.children[i]);
         }
       };
       updateMappings(object, ref);
@@ -23753,6 +24628,36 @@
     });
   }
 
+  // node_modules/three/examples/jsm/utils/SkeletonUtils.js
+  function clone(source) {
+    const sourceLookup = /* @__PURE__ */ new Map();
+    const cloneLookup = /* @__PURE__ */ new Map();
+    const clone2 = source.clone();
+    parallelTraverse(source, clone2, function(sourceNode, clonedNode) {
+      sourceLookup.set(clonedNode, sourceNode);
+      cloneLookup.set(sourceNode, clonedNode);
+    });
+    clone2.traverse(function(node) {
+      if (!node.isSkinnedMesh) return;
+      const clonedMesh = node;
+      const sourceMesh = sourceLookup.get(node);
+      const sourceBones = sourceMesh.skeleton.bones;
+      clonedMesh.skeleton = sourceMesh.skeleton.clone();
+      clonedMesh.bindMatrix.copy(sourceMesh.bindMatrix);
+      clonedMesh.skeleton.bones = sourceBones.map(function(bone) {
+        return cloneLookup.get(bone);
+      });
+      clonedMesh.bind(clonedMesh.skeleton, clonedMesh.bindMatrix);
+    });
+    return clone2;
+  }
+  function parallelTraverse(a, b, callback) {
+    callback(a, b);
+    for (let i = 0; i < a.children.length; i++) {
+      parallelTraverse(a.children[i], b.children[i], callback);
+    }
+  }
+
   // www/game3d.js
   var MATCH_MS = 30 * 60 * 1e3;
   var WORLD = 180;
@@ -23819,12 +24724,15 @@
     youActions: 10,
     revealedMayor: false,
     night: 0,
+    isNight: false,
     inside: null,
     nearDoor: null,
+    doorHold: 0,
     startedAt: 0,
     timerId: null,
     move: { x: 0, z: 0 },
-    modelsReady: false
+    modelsReady: false,
+    camZoom: 1
   };
   var renderer;
   var scene;
@@ -23891,7 +24799,10 @@
   async function loadModels() {
     const loader = new GLTFLoader();
     const status = $("loadStatus");
-    const jobs = TOWN_FILES.map((f) => ({ key: `town/${f}`, url: `./models/town/${f}` }));
+    const jobs = [
+      { key: "xbot.glb", url: "./models/xbot.glb" },
+      ...TOWN_FILES.map((f) => ({ key: `town/${f}`, url: `./models/town/${f}` }))
+    ];
     const total = jobs.length;
     for (let i = 0; i < total; i++) {
       const job = jobs[i];
@@ -23913,7 +24824,11 @@
   function cloneTemplate(key) {
     const gltf = templates[key];
     if (!gltf) throw new Error(`Falta modelo ${key}`);
-    const root = gltf.scene.clone(true);
+    let hasSkin = false;
+    gltf.scene.traverse((c) => {
+      if (c.isSkinnedMesh) hasSkin = true;
+    });
+    const root = hasSkin ? clone(gltf.scene) : gltf.scene.clone(true);
     root.traverse((c) => {
       if (c.isMesh) {
         c.castShadow = true;
@@ -23921,7 +24836,12 @@
         if (c.material) {
           const mats = Array.isArray(c.material) ? c.material : [c.material];
           for (const m of mats) {
-            if (m && m.map) m.map.colorSpace = SRGBColorSpace;
+            if (!m) continue;
+            if (m.map) m.map.colorSpace = SRGBColorSpace;
+            if (m.color && key.startsWith("town/")) {
+              m.color.multiplyScalar(0.55);
+              m.roughness = Math.min(1, (m.roughness ?? 0.7) + 0.15);
+            }
           }
         }
       }
@@ -24264,8 +25184,7 @@
     interiorRoot.visible = true;
     player.position.set(0, 0, 3);
     $("sectorTag").textContent = def?.name || id;
-    $("btnEnter").textContent = "SALIR";
-    crier(`Dentro de ${def?.name || id}. Puerta brillante = salir.`);
+    crier(`Dentro de ${def?.name || id}. Acercate a la puerta para salir.`);
   }
   function hits(x, z, radius) {
     for (const c of colliders) {
@@ -24289,10 +25208,13 @@
     if (!hits(fromX, toZ, radius)) return { x: fromX, z: toZ };
     return { x: fromX, z: fromZ };
   }
+  function canUseDoors() {
+    return !!state.isNight || !!state.inside;
+  }
   function updateDoors() {
     state.nearDoor = null;
     let best = null;
-    let bestDist = 2.2;
+    let bestDist = 2;
     for (const door of doorMeshes) {
       door.updateWorldMatrix(true, false);
       const wp = new Vector3();
@@ -24301,32 +25223,98 @@
       const dz = player.position.z - wp.z;
       const dist = Math.hypot(dx, dz);
       const mat = door.material;
-      const facingOk = state.inside || door.userData.exit ? true : true;
-      if (dist < 2.2 && facingOk) {
-        mat.emissive.setHex(12868646);
-        mat.emissiveIntensity = 0.55 + Math.sin(performance.now() / 180) * 0.25;
-        mat.opacity = 0.9;
+      const open = canUseDoors() || door.userData.exit;
+      if (dist < 2 && open) {
+        mat.emissive.setHex(9058840);
+        mat.emissiveIntensity = 0.35 + Math.sin(performance.now() / 200) * 0.15;
+        mat.opacity = 0.75;
         if (dist < bestDist) {
           bestDist = dist;
           best = door.userData;
         }
-      } else if (!door.userData.exit) {
+      } else {
         mat.emissive.setHex(0);
         mat.emissiveIntensity = 0;
-        mat.opacity = 0.4;
+        mat.opacity = state.isNight ? 0.35 : 0.15;
+        if (dist < 2 && !open && !door.userData.exit) {
+          best = { ...door.userData, locked: true };
+          bestDist = dist;
+        }
       }
     }
     state.nearDoor = best;
-    const btn = $("btnEnter");
-    if (state.inside) {
-      btn.disabled = !best;
-      btn.textContent = "SALIR";
-    } else if (best) {
-      btn.disabled = false;
-      btn.textContent = `ENTRAR \xB7 ${best.label}`;
-    } else {
-      btn.disabled = true;
-      btn.textContent = "ENTRAR";
+  }
+  function applyRoleLook(root, role) {
+    root.traverse((c) => {
+      if (!c.isMesh || !c.material) return;
+      const mats = Array.isArray(c.material) ? c.material : [c.material];
+      const next = mats.map((m) => {
+        const mat = m.clone();
+        const name = `${c.name || ""} ${mat.name || ""}`.toLowerCase();
+        if (/eye|teeth|cornea/.test(name)) return mat;
+        if (/skin|face|head|hand|arm|neck|body/.test(name) && !/shirt|cloth|suit|pant|boot/.test(name)) {
+          mat.color = new Color(9263676);
+          mat.roughness = 0.8;
+          return mat;
+        }
+        if (role === "Alcalde") {
+          mat.color = new Color(/pant|leg|boot/.test(name) ? 1185824 : 1718869);
+        } else if (role === "Pregonero") {
+          mat.color = new Color(/pant|leg|boot/.test(name) ? 2759696 : 4862488);
+        } else {
+          mat.color = new Color(854794);
+        }
+        mat.metalness = 0.05;
+        mat.roughness = 0.85;
+        return mat;
+      });
+      c.material = Array.isArray(c.material) ? next : next[0];
+    });
+    const kill = [];
+    root.traverse((c) => {
+      const n = `${c.name || ""}`.toLowerCase();
+      if (/weapon|gun|rifle|sword|knife|pistol|blade|axe|bow|arrow|shield|spear/.test(n)) kill.push(c);
+    });
+    for (const c of kill) c.parent?.remove(c);
+    if (role === "Alcalde") {
+      const hat = new Group();
+      const top = new Mesh(
+        new CylinderGeometry(0.12, 0.13, 0.18, 12),
+        new MeshStandardMaterial({ color: 657932, roughness: 0.9 })
+      );
+      top.position.y = 1.78;
+      const brim = new Mesh(
+        new CylinderGeometry(0.22, 0.22, 0.03, 14),
+        new MeshStandardMaterial({ color: 328966, roughness: 0.95 })
+      );
+      brim.position.y = 1.68;
+      hat.add(top, brim);
+      root.add(hat);
+    } else if (role === "Asesino") {
+      const hood = new Mesh(
+        new SphereGeometry(0.18, 12, 10, 0, Math.PI * 2, 0, Math.PI / 1.7),
+        new MeshStandardMaterial({ color: 328965, side: DoubleSide, roughness: 1 })
+      );
+      hood.position.set(0, 1.65, 0);
+      root.add(hood);
+    }
+  }
+  function makeRoleCharacter(role) {
+    if (!templates["xbot.glb"]) return makeColonialPerson(role);
+    try {
+      const { root, animations } = cloneTemplate("xbot.glb");
+      root.scale.setScalar(0.01);
+      root.updateMatrixWorld(true);
+      const box = new Box3().setFromObject(root);
+      root.position.y -= box.min.y;
+      applyRoleLook(root, role);
+      root.userData.radius = 0.35;
+      root.userData.role = role;
+      root.userData.animations = animations;
+      return root;
+    } catch (e) {
+      console.error(e);
+      return makeColonialPerson(role);
     }
   }
   function makeColonialPerson(role) {
@@ -24470,18 +25458,44 @@
     playerActions = null;
   }
   function attachCharacter(role, isPlayer, x, z) {
-    const root = makeColonialPerson(role);
-    root.position.set(x, 0, z);
+    const root = makeRoleCharacter(role);
+    root.position.set(x, root.position.y || 0, z);
     scene.add(root);
-    if (isPlayer) player = root;
+    if (isPlayer) {
+      player = root;
+      const animations = root.userData.animations || [];
+      if (animations.length) {
+        mixer = new AnimationMixer(player);
+        const clip = animations.find((a) => /walk|run/i.test(a.name)) || animations.find((a) => /idle/i.test(a.name)) || animations[0];
+        playerActions = mixer.clipAction(clip);
+        playerActions.play();
+        playerActions.paused = true;
+      }
+    }
     return root;
   }
   function attachCrier() {
-    const c = makeColonialPerson("Pregonero");
-    c.position.set(-3.5, 0, 4.5);
+    const c = makeRoleCharacter("Pregonero");
+    c.position.set(-3.5, c.position.y || 0, 4.5);
     c.rotation.y = Math.PI * 0.25;
     scene.add(c);
     return c;
+  }
+  function setDayNight(night) {
+    state.isNight = night;
+    if (!scene) return;
+    scene.background = new Color(night ? 658450 : 4870728);
+    scene.fog = new Fog(night ? 658450 : 4870728, night ? 28 : 45, night ? 90 : 120);
+    scene.traverse((o) => {
+      if (o.isDirectionalLight) {
+        o.intensity = night ? 0.25 : 0.75;
+        o.color.setHex(night ? 8952251 : 14205072);
+      }
+      if (o.isHemisphereLight) o.intensity = night ? 0.35 : 0.85;
+      if (o.isAmbientLight) o.intensity = night ? 0.12 : 0.25;
+      if (o.isPointLight) o.intensity = night ? 1.1 : 0.35;
+    });
+    $("sectorTag").textContent = night ? "Salem \xB7 Noche" : "Salem \xB7 D\xEDa";
   }
   function initThree() {
     const canvas = $("c");
@@ -24490,17 +25504,17 @@
     renderer.shadowMap.enabled = true;
     renderer.outputColorSpace = SRGBColorSpace;
     scene = new Scene();
-    scene.background = new Color(6976360);
-    scene.fog = new Fog(6976360, 40, 120);
-    camera = new PerspectiveCamera(55, 1, 0.1, 260);
+    scene.background = new Color(4870728);
+    scene.fog = new Fog(4870728, 45, 120);
+    camera = new PerspectiveCamera(50, 1, 0.1, 280);
     clock = new Clock();
-    scene.add(new HemisphereLight(14207144, 2761240, 0.95));
-    const sun = new DirectionalLight(15257768, 0.85);
+    scene.add(new HemisphereLight(12101768, 1709328, 0.85));
+    const sun = new DirectionalLight(14205072, 0.75);
     sun.position.set(22, 28, 10);
     sun.castShadow = true;
     sun.shadow.mapSize.set(1024, 1024);
     scene.add(sun);
-    scene.add(new AmbientLight(12101768, 0.28));
+    scene.add(new AmbientLight(9075304, 0.25));
     worldRoot = new Group();
     interiorRoot = new Group();
     interiorRoot.visible = false;
@@ -24524,8 +25538,9 @@
     requestAnimationFrame(tick);
     if (!renderer) return;
     const dt = Math.min(clock.getDelta(), 0.05);
+    if (mixer) mixer.update(dt);
     if (state.running && $("game").classList.contains("active") && player) {
-      const speed = 4.6;
+      const speed = 4.2;
       const fromX = player.position.x;
       const fromZ = player.position.z;
       const toX = fromX + state.move.x * speed * dt;
@@ -24536,11 +25551,30 @@
       const moving = !!(state.move.x || state.move.z);
       if (moving) {
         player.rotation.y = Math.atan2(state.move.x, state.move.z);
+        if (playerActions) playerActions.paused = false;
+      } else if (playerActions) {
+        playerActions.paused = true;
       }
-      updateWalk(player, dt, moving);
+      if (player.userData.walk) updateWalk(player, dt, moving);
       updateDoors();
-      camera.position.set(player.position.x, 7.5, player.position.z + 9);
-      camera.lookAt(player.position.x, 1.2, player.position.z);
+      if (state.nearDoor && !state.nearDoor.locked) {
+        state.doorHold += dt;
+        if (state.doorHold > 0.45) {
+          state.doorHold = 0;
+          doEnter();
+        }
+      } else {
+        state.doorHold = 0;
+        if (state.nearDoor?.locked && moving) {
+          if (!updateDoors._lockToast || performance.now() - updateDoors._lockToast > 2500) {
+            toast("Cerrado de d\xEDa. De noche se abre.");
+            updateDoors._lockToast = performance.now();
+          }
+        }
+      }
+      const z = state.camZoom || 1;
+      camera.position.set(player.position.x, 11 * z, player.position.z + 14 * z);
+      camera.lookAt(player.position.x, 1.3, player.position.z);
     }
     if (worldRoot) {
       worldRoot.traverse((c) => {
@@ -24551,6 +25585,45 @@
       });
     }
     renderer.render(scene, camera);
+  }
+  function setupPinchZoom() {
+    let lastDist = 0;
+    const el = $("c") || document.body;
+    el.addEventListener(
+      "touchstart",
+      (e) => {
+        if (e.touches.length === 2) {
+          const dx = e.touches[0].clientX - e.touches[1].clientX;
+          const dy = e.touches[0].clientY - e.touches[1].clientY;
+          lastDist = Math.hypot(dx, dy);
+        }
+      },
+      { passive: true }
+    );
+    el.addEventListener(
+      "touchmove",
+      (e) => {
+        if (e.touches.length !== 2) return;
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        const dist = Math.hypot(dx, dy);
+        if (!lastDist) {
+          lastDist = dist;
+          return;
+        }
+        const delta = (lastDist - dist) / 180;
+        lastDist = dist;
+        state.camZoom = MathUtils.clamp((state.camZoom || 1) + delta, 1, 2);
+      },
+      { passive: true }
+    );
+    el.addEventListener(
+      "touchend",
+      () => {
+        lastDist = 0;
+      },
+      { passive: true }
+    );
   }
   function setupJoystick() {
     const zone = $("joyZone");
@@ -24605,11 +25678,15 @@
     state.foeHp = 100;
     state.youActions = 10;
     state.night = 0;
+    state.isNight = false;
     state.inside = null;
+    state.doorHold = 0;
+    state.camZoom = 1;
     state.running = true;
     state.startedAt = Date.now();
     $("roleTag").textContent = state.you;
     buildExterior();
+    setDayNight(false);
     clearCharacters();
     attachCharacter(state.you, true, 0, 14);
     attachCharacter(state.foe, false, 6, -5);
@@ -24620,7 +25697,7 @@
     state.timerId = setInterval(updateTimer, 250);
     updateTimer();
     crier(
-      `Sos ${state.you} (tama\xF1o humano). Ciudad sucia tipo Salem, antorchas (no faroles). El ${state.foe} est\xE1 quieto. Pregonero en la Plaza.`
+      `D\xEDa: puertas cerradas. Noche: se abren (acercate y entr\xE1s solo). Pellizc\xE1 para alejar la c\xE1mara. Sos ${state.you}.`
     );
   }
   function updateTimer() {
@@ -24637,19 +25714,23 @@
   }
   function doEnter() {
     if (state.inside) {
-      if (!state.nearDoor) return toast("Acercate a la puerta para salir");
+      if (!state.nearDoor || state.nearDoor.locked) return;
       const id = state.inside;
       const def = BUILDING_DEFS.find((x) => x.id === id);
       state.inside = null;
       buildExterior();
-      if (def) player.position.set(def.x, 0, def.z + 10);
-      else player.position.set(0, 0, 14);
-      $("btnEnter").textContent = "ENTRAR";
+      setDayNight(state.isNight);
+      if (def) player.position.set(def.x, player.position.y, def.z + 10);
+      else player.position.set(0, player.position.y, 14);
       toast("Sal\xEDs del edificio");
       return;
     }
-    if (!state.nearDoor || state.nearDoor.exit) return;
-    buildInterior(state.nearDoor.id);
+    if (!state.nearDoor || state.nearDoor.exit || state.nearDoor.locked) return;
+    if (!state.isNight) {
+      toast("Cerrado de d\xEDa");
+      return;
+    }
+    buildInterior(state.nearDoor.doorId || state.nearDoor.id);
     toast(`Entras a ${state.nearDoor.label}`);
   }
   function openNightPanel() {
@@ -24665,9 +25746,17 @@
       };
       body.appendChild(b);
     };
-    mk("Pasar noche (sin acci\xF3n)", () => {
-      state.night += 1;
-      crier(`Amanece. Noche ${state.night}.`);
+    mk(state.isNight ? "Pasar a D\xEDa (puertas cierran)" : "Pasar a Noche (puertas abren)", () => {
+      setDayNight(!state.isNight);
+      if (state.isNight) {
+        state.night += 1;
+        crier(`Cae la noche ${state.night}. Las puertas se abren. Acercate y entr\xE1s solo.`);
+      } else {
+        crier("Amanece. Las puertas quedan cerradas.");
+      }
+    });
+    mk("Pasar turno (sin acci\xF3n)", () => {
+      crier(state.isNight ? "La noche sigue\u2026" : "El d\xEDa sigue\u2026");
     });
     if (state.you === "Asesino") {
       mk("Atacar rival aqu\xED (50%)", () => {
@@ -24715,8 +25804,8 @@
     clearInterval(state.timerId);
     show("menu");
   };
-  $("btnEnter").onclick = () => doEnter();
   $("btnNight").onclick = () => openNightPanel();
+  setupPinchZoom();
   $("panelClose").onclick = () => $("panel").classList.add("hidden");
   $("btnExit").onclick = () => {
     try {

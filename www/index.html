@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-  <title>Salem 3D</title>
+  <title>Salem</title>
   <link rel="stylesheet" href="style.css" />
   <link rel="icon" href="icon.png" />
 </head>
@@ -12,11 +12,11 @@
     <div class="hero">
       <img src="icon.png" alt="Horca" />
       <h1>SALEM</h1>
-      <p>Modelos 3D · mundo abierto · colisión</p>
-      <div id="loadStatus" class="muted">Cargando modelos… 0%</div>
+      <p>Ciudad sombría · día y noche · para mayores</p>
+      <div id="loadStatus" class="muted">Cargando… 0%</div>
       <div class="row" style="width:100%;max-width:320px">
-        <button id="btnStart" disabled>Iniciar partida</button>
-        <button id="btnRetryLoad" class="secondary">Reintentar carga</button>
+        <button id="btnStart" disabled>Iniciar</button>
+        <button id="btnRetryLoad" class="secondary">Reintentar</button>
         <button id="btnExit" class="secondary">Salir</button>
       </div>
     </div>
@@ -34,12 +34,11 @@
     </div>
     <div id="joyZone"><div id="joyBase"><div id="joyKnob"></div></div></div>
     <div id="verbBar">
-      <button id="btnEnter" disabled>ENTRAR</button>
-      <button id="btnNight" class="secondary">Noche / acción</button>
+      <button id="btnNight" class="secondary">Día / Noche</button>
       <button id="btnMenu" class="secondary">Menú</button>
     </div>
     <div id="panel" class="hidden">
-      <div id="panelTitle">Noche</div>
+      <div id="panelTitle">Acciones</div>
       <div id="panelBody"></div>
       <button id="panelClose" class="secondary">Cerrar</button>
     </div>

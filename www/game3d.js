@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+import { clone as skeletonClone } from 'three/addons/utils/SkeletonUtils.js'
 
 const MATCH_MS = 30 * 60 * 1000
 const WORLD = 180
@@ -69,12 +70,15 @@ const state = {
   youActions: 10,
   revealedMayor: false,
   night: 0,
+  isNight: false,
   inside: null,
   nearDoor: null,
+  doorHold: 0,
   startedAt: 0,
   timerId: null,
   move: { x: 0, z: 0 },
   modelsReady: false,
+  camZoom: 1,
 }
 
 let renderer, scene, camera, player, clock, worldRoot, interiorRoot
@@ -141,8 +145,10 @@ function makeSign(text, x, y, z, rotY) {
 async function loadModels() {
   const loader = new GLTFLoader()
   const status = $('loadStatus')
-  // Personajes se arman en código (época colonial); no usamos xbot gigante.
-  const jobs = TOWN_FILES.map((f) => ({ key: `town/${f}`, url: `./models/town/${f}` }))
+  const jobs = [
+    { key: 'xbot.glb', url: './models/xbot.glb' },
+    ...TOWN_FILES.map((f) => ({ key: `town/${f}`, url: `./models/town/${f}` })),
+  ]
   const total = jobs.length
   for (let i = 0; i < total; i++) {
     const job = jobs[i]
@@ -165,7 +171,11 @@ async function loadModels() {
 function cloneTemplate(key) {
   const gltf = templates[key]
   if (!gltf) throw new Error(`Falta modelo ${key}`)
-  const root = gltf.scene.clone(true)
+  let hasSkin = false
+  gltf.scene.traverse((c) => {
+    if (c.isSkinnedMesh) hasSkin = true
+  })
+  const root = hasSkin ? skeletonClone(gltf.scene) : gltf.scene.clone(true)
   root.traverse((c) => {
     if (c.isMesh) {
       c.castShadow = true
@@ -173,7 +183,13 @@ function cloneTemplate(key) {
       if (c.material) {
         const mats = Array.isArray(c.material) ? c.material : [c.material]
         for (const m of mats) {
-          if (m && m.map) m.map.colorSpace = THREE.SRGBColorSpace
+          if (!m) continue
+          if (m.map) m.map.colorSpace = THREE.SRGBColorSpace
+          // ciudad más sombría: bajar brillo de texturas Kenney
+          if (m.color && key.startsWith('town/')) {
+            m.color.multiplyScalar(0.55)
+            m.roughness = Math.min(1, (m.roughness ?? 0.7) + 0.15)
+          }
         }
       }
     }
@@ -556,8 +572,7 @@ function buildInterior(id) {
   interiorRoot.visible = true
   player.position.set(0, 0, 3)
   $('sectorTag').textContent = def?.name || id
-  $('btnEnter').textContent = 'SALIR'
-  crier(`Dentro de ${def?.name || id}. Puerta brillante = salir.`)
+  crier(`Dentro de ${def?.name || id}. Acercate a la puerta para salir.`)
 }
 
 function hits(x, z, radius) {
@@ -584,10 +599,16 @@ function resolveMove(fromX, fromZ, toX, toZ, radius) {
   return { x: fromX, z: fromZ }
 }
 
+
+function canUseDoors() {
+  // De día cerradas; de noche abiertas (hora límite exacta: después)
+  return !!state.isNight || !!state.inside
+}
+
 function updateDoors() {
   state.nearDoor = null
   let best = null
-  let bestDist = 2.2
+  let bestDist = 2.0
   for (const door of doorMeshes) {
     door.updateWorldMatrix(true, false)
     const wp = new THREE.Vector3()
@@ -596,34 +617,107 @@ function updateDoors() {
     const dz = player.position.z - wp.z
     const dist = Math.hypot(dx, dz)
     const mat = door.material
-    const facingOk = state.inside || door.userData.exit ? true : true
-    if (dist < 2.2 && facingOk) {
-      mat.emissive.setHex(0xc45c26)
-      mat.emissiveIntensity = 0.55 + Math.sin(performance.now() / 180) * 0.25
-      mat.opacity = 0.9
+    const open = canUseDoors() || door.userData.exit
+    if (dist < 2.0 && open) {
+      mat.emissive.setHex(0x8a3a18)
+      mat.emissiveIntensity = 0.35 + Math.sin(performance.now() / 200) * 0.15
+      mat.opacity = 0.75
       if (dist < bestDist) {
         bestDist = dist
         best = door.userData
       }
-    } else if (!door.userData.exit) {
+    } else {
       mat.emissive.setHex(0x000000)
       mat.emissiveIntensity = 0
-      mat.opacity = 0.4
+      mat.opacity = state.isNight ? 0.35 : 0.15
+      if (dist < 2.0 && !open && !door.userData.exit) {
+        // cerca pero cerrado de día
+        best = { ...door.userData, locked: true }
+        bestDist = dist
+      }
     }
   }
   state.nearDoor = best
-  const btn = $('btnEnter')
-  if (state.inside) {
-    btn.disabled = !best
-    btn.textContent = 'SALIR'
-  } else if (best) {
-    btn.disabled = false
-    btn.textContent = `ENTRAR · ${best.label}`
-  } else {
-    btn.disabled = true
-    btn.textContent = 'ENTRAR'
+}
+
+function applyRoleLook(root, role) {
+  root.traverse((c) => {
+    if (!c.isMesh || !c.material) return
+    const mats = Array.isArray(c.material) ? c.material : [c.material]
+    const next = mats.map((m) => {
+      const mat = m.clone()
+      const name = `${c.name || ''} ${mat.name || ''}`.toLowerCase()
+      if (/eye|teeth|cornea/.test(name)) return mat
+      if (/skin|face|head|hand|arm|neck|body/.test(name) && !/shirt|cloth|suit|pant|boot/.test(name)) {
+        mat.color = new THREE.Color(0x8d5a3c)
+        mat.roughness = 0.8
+        return mat
+      }
+      if (role === 'Alcalde') {
+        mat.color = new THREE.Color(/pant|leg|boot/.test(name) ? 0x121820 : 0x1a3a55)
+      } else if (role === 'Pregonero') {
+        mat.color = new THREE.Color(/pant|leg|boot/.test(name) ? 0x2a1c10 : 0x4a3218)
+      } else {
+        mat.color = new THREE.Color(0x0d0b0a)
+      }
+      mat.metalness = 0.05
+      mat.roughness = 0.85
+      return mat
+    })
+    c.material = Array.isArray(c.material) ? next : next[0]
+  })
+  // sin armas visibles
+  const kill = []
+  root.traverse((c) => {
+    const n = `${c.name || ''}`.toLowerCase()
+    if (/weapon|gun|rifle|sword|knife|pistol|blade|axe|bow|arrow|shield|spear/.test(n)) kill.push(c)
+  })
+  for (const c of kill) c.parent?.remove(c)
+
+  if (role === 'Alcalde') {
+    const hat = new THREE.Group()
+    const top = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.12, 0.13, 0.18, 12),
+      new THREE.MeshStandardMaterial({ color: 0x0a0a0c, roughness: 0.9 }),
+    )
+    top.position.y = 1.78
+    const brim = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.22, 0.22, 0.03, 14),
+      new THREE.MeshStandardMaterial({ color: 0x050506, roughness: 0.95 }),
+    )
+    brim.position.y = 1.68
+    hat.add(top, brim)
+    root.add(hat)
+  } else if (role === 'Asesino') {
+    const hood = new THREE.Mesh(
+      new THREE.SphereGeometry(0.18, 12, 10, 0, Math.PI * 2, 0, Math.PI / 1.7),
+      new THREE.MeshStandardMaterial({ color: 0x050505, side: THREE.DoubleSide, roughness: 1 }),
+    )
+    hood.position.set(0, 1.65, 0)
+    root.add(hood)
   }
 }
+
+function makeRoleCharacter(role) {
+  if (!templates['xbot.glb']) return makeColonialPerson(role)
+  try {
+    const { root, animations } = cloneTemplate('xbot.glb')
+    // Mixamo en centímetros → metros (~1.75 m)
+    root.scale.setScalar(0.01)
+    root.updateMatrixWorld(true)
+    const box = new THREE.Box3().setFromObject(root)
+    root.position.y -= box.min.y
+    applyRoleLook(root, role)
+    root.userData.radius = 0.35
+    root.userData.role = role
+    root.userData.animations = animations
+    return root
+  } catch (e) {
+    console.error(e)
+    return makeColonialPerson(role)
+  }
+}
+
 
 function makeColonialPerson(role) {
   const g = new THREE.Group()
@@ -777,20 +871,51 @@ function clearCharacters() {
 }
 
 function attachCharacter(role, isPlayer, x, z) {
-  const root = makeColonialPerson(role)
-  root.position.set(x, 0, z)
+  const root = makeRoleCharacter(role)
+  root.position.set(x, root.position.y || 0, z)
   scene.add(root)
-  if (isPlayer) player = root
+  if (isPlayer) {
+    player = root
+    const animations = root.userData.animations || []
+    if (animations.length) {
+      mixer = new THREE.AnimationMixer(player)
+      const clip =
+        animations.find((a) => /walk|run/i.test(a.name)) ||
+        animations.find((a) => /idle/i.test(a.name)) ||
+        animations[0]
+      playerActions = mixer.clipAction(clip)
+      playerActions.play()
+      playerActions.paused = true
+    }
+  }
   return root
 }
 
 function attachCrier() {
-  const c = makeColonialPerson('Pregonero')
-  c.position.set(-3.5, 0, 4.5)
+  const c = makeRoleCharacter('Pregonero')
+  c.position.set(-3.5, c.position.y || 0, 4.5)
   c.rotation.y = Math.PI * 0.25
   scene.add(c)
   return c
 }
+
+function setDayNight(night) {
+  state.isNight = night
+  if (!scene) return
+  scene.background = new THREE.Color(night ? 0x0a0c12 : 0x4a5248)
+  scene.fog = new THREE.Fog(night ? 0x0a0c12 : 0x4a5248, night ? 28 : 45, night ? 90 : 120)
+  scene.traverse((o) => {
+    if (o.isDirectionalLight) {
+      o.intensity = night ? 0.25 : 0.75
+      o.color.setHex(night ? 0x8899bb : 0xd8c090)
+    }
+    if (o.isHemisphereLight) o.intensity = night ? 0.35 : 0.85
+    if (o.isAmbientLight) o.intensity = night ? 0.12 : 0.25
+    if (o.isPointLight) o.intensity = night ? 1.1 : 0.35
+  })
+  $('sectorTag').textContent = night ? 'Salem · Noche' : 'Salem · Día'
+}
+
 
 function initThree() {
   const canvas = $('c')
@@ -799,17 +924,17 @@ function initThree() {
   renderer.shadowMap.enabled = true
   renderer.outputColorSpace = THREE.SRGBColorSpace
   scene = new THREE.Scene()
-  scene.background = new THREE.Color(0x6a7368)
-  scene.fog = new THREE.Fog(0x6a7368, 40, 120)
-  camera = new THREE.PerspectiveCamera(55, 1, 0.1, 260)
+  scene.background = new THREE.Color(0x4a5248)
+  scene.fog = new THREE.Fog(0x4a5248, 45, 120)
+  camera = new THREE.PerspectiveCamera(50, 1, 0.1, 280)
   clock = new THREE.Clock()
-  scene.add(new THREE.HemisphereLight(0xd8c8a8, 0x2a2218, 0.95))
-  const sun = new THREE.DirectionalLight(0xe8d0a8, 0.85)
+  scene.add(new THREE.HemisphereLight(0xb8a888, 0x1a1510, 0.85))
+  const sun = new THREE.DirectionalLight(0xd8c090, 0.75)
   sun.position.set(22, 28, 10)
   sun.castShadow = true
   sun.shadow.mapSize.set(1024, 1024)
   scene.add(sun)
-  scene.add(new THREE.AmbientLight(0xb8a888, 0.28))
+  scene.add(new THREE.AmbientLight(0x8a7a68, 0.25))
   worldRoot = new THREE.Group()
   interiorRoot = new THREE.Group()
   interiorRoot.visible = false
@@ -835,8 +960,9 @@ function tick() {
   requestAnimationFrame(tick)
   if (!renderer) return
   const dt = Math.min(clock.getDelta(), 0.05)
+  if (mixer) mixer.update(dt)
   if (state.running && $('game').classList.contains('active') && player) {
-    const speed = 4.6
+    const speed = 4.2
     const fromX = player.position.x
     const fromZ = player.position.z
     const toX = fromX + state.move.x * speed * dt
@@ -847,13 +973,33 @@ function tick() {
     const moving = !!(state.move.x || state.move.z)
     if (moving) {
       player.rotation.y = Math.atan2(state.move.x, state.move.z)
+      if (playerActions) playerActions.paused = false
+    } else if (playerActions) {
+      playerActions.paused = true
     }
-    updateWalk(player, dt, moving)
+    if (player.userData.walk) updateWalk(player, dt, moving)
     updateDoors()
-    camera.position.set(player.position.x, 7.5, player.position.z + 9)
-    camera.lookAt(player.position.x, 1.2, player.position.z)
+    // entrada automática (sin botón): cerca de puerta abierta
+    if (state.nearDoor && !state.nearDoor.locked) {
+      state.doorHold += dt
+      if (state.doorHold > 0.45) {
+        state.doorHold = 0
+        doEnter()
+      }
+    } else {
+      state.doorHold = 0
+      if (state.nearDoor?.locked && moving) {
+        // aviso suave
+        if (!updateDoors._lockToast || performance.now() - updateDoors._lockToast > 2500) {
+          toast('Cerrado de día. De noche se abre.')
+          updateDoors._lockToast = performance.now()
+        }
+      }
+    }
+    const z = state.camZoom || 1
+    camera.position.set(player.position.x, 11 * z, player.position.z + 14 * z)
+    camera.lookAt(player.position.x, 1.3, player.position.z)
   }
-  // parpadeo suave de llamas
   if (worldRoot) {
     worldRoot.traverse((c) => {
       if (c.userData?.flame && c.material) {
@@ -863,6 +1009,46 @@ function tick() {
     })
   }
   renderer.render(scene, camera)
+}
+
+function setupPinchZoom() {
+  let lastDist = 0
+  const el = $('c') || document.body
+  el.addEventListener(
+    'touchstart',
+    (e) => {
+      if (e.touches.length === 2) {
+        const dx = e.touches[0].clientX - e.touches[1].clientX
+        const dy = e.touches[0].clientY - e.touches[1].clientY
+        lastDist = Math.hypot(dx, dy)
+      }
+    },
+    { passive: true },
+  )
+  el.addEventListener(
+    'touchmove',
+    (e) => {
+      if (e.touches.length !== 2) return
+      const dx = e.touches[0].clientX - e.touches[1].clientX
+      const dy = e.touches[0].clientY - e.touches[1].clientY
+      const dist = Math.hypot(dx, dy)
+      if (!lastDist) {
+        lastDist = dist
+        return
+      }
+      const delta = (lastDist - dist) / 180
+      lastDist = dist
+      state.camZoom = THREE.MathUtils.clamp((state.camZoom || 1) + delta, 1, 2)
+    },
+    { passive: true },
+  )
+  el.addEventListener(
+    'touchend',
+    () => {
+      lastDist = 0
+    },
+    { passive: true },
+  )
 }
 
 function setupJoystick() {
@@ -921,11 +1107,15 @@ function startMatch() {
   state.foeHp = 100
   state.youActions = 10
   state.night = 0
+  state.isNight = false
   state.inside = null
+  state.doorHold = 0
+  state.camZoom = 1
   state.running = true
   state.startedAt = Date.now()
   $('roleTag').textContent = state.you
   buildExterior()
+  setDayNight(false)
   clearCharacters()
   attachCharacter(state.you, true, 0, 14)
   attachCharacter(state.foe, false, 6, -5)
@@ -936,7 +1126,7 @@ function startMatch() {
   state.timerId = setInterval(updateTimer, 250)
   updateTimer()
   crier(
-    `Sos ${state.you} (tamaño humano). Ciudad sucia tipo Salem, antorchas (no faroles). El ${state.foe} está quieto. Pregonero en la Plaza.`,
+    `Día: puertas cerradas. Noche: se abren (acercate y entrás solo). Pellizcá para alejar la cámara. Sos ${state.you}.`,
   )
 }
 
@@ -955,19 +1145,23 @@ function updateTimer() {
 
 function doEnter() {
   if (state.inside) {
-    if (!state.nearDoor) return toast('Acercate a la puerta para salir')
+    if (!state.nearDoor || state.nearDoor.locked) return
     const id = state.inside
     const def = BUILDING_DEFS.find((x) => x.id === id)
     state.inside = null
     buildExterior()
-    if (def) player.position.set(def.x, 0, def.z + 10)
-    else player.position.set(0, 0, 14)
-    $('btnEnter').textContent = 'ENTRAR'
+    setDayNight(state.isNight)
+    if (def) player.position.set(def.x, player.position.y, def.z + 10)
+    else player.position.set(0, player.position.y, 14)
     toast('Salís del edificio')
     return
   }
-  if (!state.nearDoor || state.nearDoor.exit) return
-  buildInterior(state.nearDoor.id)
+  if (!state.nearDoor || state.nearDoor.exit || state.nearDoor.locked) return
+  if (!state.isNight) {
+    toast('Cerrado de día')
+    return
+  }
+  buildInterior(state.nearDoor.doorId || state.nearDoor.id)
   toast(`Entras a ${state.nearDoor.label}`)
 }
 
@@ -984,9 +1178,17 @@ function openNightPanel() {
     }
     body.appendChild(b)
   }
-  mk('Pasar noche (sin acción)', () => {
-    state.night += 1
-    crier(`Amanece. Noche ${state.night}.`)
+  mk(state.isNight ? 'Pasar a Día (puertas cierran)' : 'Pasar a Noche (puertas abren)', () => {
+    setDayNight(!state.isNight)
+    if (state.isNight) {
+      state.night += 1
+      crier(`Cae la noche ${state.night}. Las puertas se abren. Acercate y entrás solo.`)
+    } else {
+      crier('Amanece. Las puertas quedan cerradas.')
+    }
+  })
+  mk('Pasar turno (sin acción)', () => {
+    crier(state.isNight ? 'La noche sigue…' : 'El día sigue…')
   })
   if (state.you === 'Asesino') {
     mk('Atacar rival aquí (50%)', () => {
@@ -1035,8 +1237,8 @@ $('btnMenu').onclick = () => {
   clearInterval(state.timerId)
   show('menu')
 }
-$('btnEnter').onclick = () => doEnter()
 $('btnNight').onclick = () => openNightPanel()
+setupPinchZoom()
 $('panelClose').onclick = () => $('panel').classList.add('hidden')
 $('btnExit').onclick = () => {
   try {
